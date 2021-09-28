@@ -1,4 +1,4 @@
-## Functions needed for datacollector
+# Functions needed for datacollector
 def get_infected_count(model):
     return model.counts["infected"]
 

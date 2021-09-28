@@ -40,7 +40,8 @@ model_params = {
     "death_risk": UserSettableParameter("slider", "Death risk per day", 0.1, 0, 1, 0.01),
     "transmissibility": UserSettableParameter("slider", "Transmissibility", 0.2, 0, 1, 0.01),
     "immunity": UserSettableParameter("slider", "Immunity", 0.1, 0, 1, 0.01),
-    "average_time_of_full_immunity_after_recovery": UserSettableParameter("slider", "Average time of full immunity after recovery", 3, 0, 100, 1)}
+    "average_time_of_full_immunity_after_recovery": UserSettableParameter("slider", "Average time of full immunity after recovery", 3, 0, 100, 1),
+    "average_immunity_gain_after_recovery": UserSettableParameter("slider", "Average immunity gain after recovery", 0.2, 0, 1, 0.01)}
 
 infected_text = InfectedText()
 

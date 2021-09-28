@@ -19,7 +19,8 @@ class InfectedModel(Model):
 
     def __init__(self, pop_size, init_infected, average_travelled_distance, infection_distance,
                  mean_length_of_disease, death_risk, transmissibility, immunity,
-                 average_time_of_full_immunity_after_recovery):
+                 average_time_of_full_immunity_after_recovery,
+                 average_immunity_gain_after_recovery):
 
         self.schedule = BaseScheduler(self)
         self.grid = GeoSpace()
@@ -58,7 +59,8 @@ class InfectedModel(Model):
                                       "death_risk": death_risk,
                                       "transmissibility": transmissibility,
                                       "immunity": immunity,
-                                      "average_time_of_full_immunity_after_recovery": average_time_of_full_immunity_after_recovery})
+                                      "average_time_of_full_immunity_after_recovery": average_time_of_full_immunity_after_recovery,
+                                      "average_immunity_gain_after_recovery": average_immunity_gain_after_recovery})
         for i in range(pop_size):
             this_neighbourhood = random.choice(neighbourhood_agents)
             # Region where agent starts

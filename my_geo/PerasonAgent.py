@@ -17,9 +17,10 @@ def make_recovered(agent):
     agent.immune_duration = int(
         round(random.expovariate(1 / agent.average_time_of_full_immunity_after_recovery), 0))
 
-# TODO implement gaining immunity after recovery
+
 def make_susceptible_after_recovery(agent):
     agent.atype = "susceptible"
+    agent.immunity += (1-agent.immunity) * random.expovariate(1 / agent.average_immunity_gain_after_recovery)
 
 
 class PersonAgent(GeoAgent):
@@ -31,7 +32,8 @@ class PersonAgent(GeoAgent):
                  mean_length_of_disease=10,
                  death_risk=0.1, init_infected=0.1,
                  transmissibility=0.1, immunity=0.2,
-                 average_time_of_full_immunity_after_recovery=5):  # in n days after recovery Pearson can't be infected again
+                 average_time_of_full_immunity_after_recovery=5,    # in n days after recovery Pearson can't be infected again
+                 average_immunity_gain_after_recovery=0.1):        # if before recovery immunity=0.4 and gaining_immunity=0.2 then immunity(after recovery) = 0.4 + (1-0.4)*0.2
 
         super().__init__(unique_id, model, shape)
         # Agent parameters
@@ -43,6 +45,7 @@ class PersonAgent(GeoAgent):
         self.transmissibility = transmissibility
         self.immunity = immunity
         self.average_time_of_full_immunity_after_recovery = average_time_of_full_immunity_after_recovery
+        self.average_immunity_gain_after_recovery = average_immunity_gain_after_recovery
 
         self.disease_duration = 0
         self.immune_duration = 0

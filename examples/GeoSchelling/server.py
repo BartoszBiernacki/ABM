@@ -11,7 +11,7 @@ class HappyElement(TextElement):
     """
 
     def __init__(self):
-        pass
+        super().__init__()
 
     def render(self, model):
         return "Happy agents: " + str(model.happy)
@@ -23,6 +23,8 @@ model_params = {
         "slider", "Fraction minority", 0.2, 0.00, 1.0, 0.05
     ),
 }
+
+my_model_params = {"density": 0.5, "minority_pc": 0.1}
 
 
 def schelling_draw(agent):
@@ -43,6 +45,6 @@ happy_element = HappyElement()
 map_element = MapModule(schelling_draw, [52, 12], 4, 500, 500)
 happy_chart = ChartModule([{"Label": "happy", "Color": "Black"}])
 server = ModularServer(
-    SchellingModel, [map_element, happy_element, happy_chart], "Schelling", model_params
+    SchellingModel, [map_element, happy_element, happy_chart], "Schelling", my_model_params
 )
-server.launch()
+

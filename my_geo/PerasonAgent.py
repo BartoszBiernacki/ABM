@@ -1,5 +1,4 @@
 import math
-
 import numpy
 from mesa_geo.geoagent import GeoAgent
 from shapely.geometry import Point

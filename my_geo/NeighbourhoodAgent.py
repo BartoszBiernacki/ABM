@@ -1,5 +1,5 @@
 from mesa_geo.geoagent import GeoAgent
-
+#
 
 class NeighbourhoodAgent(GeoAgent):
     """Neighbourhood agent. Changes color according to number of infected inside it."""

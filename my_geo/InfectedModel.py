@@ -1,4 +1,3 @@
-import numpy
 from mesa.datacollection import DataCollector
 from mesa import Model
 from mesa.time import BaseScheduler

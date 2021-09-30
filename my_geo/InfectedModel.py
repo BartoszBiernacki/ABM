@@ -34,12 +34,18 @@ class InfectedModel(Model):
 
         self.running = True
         self.datacollector = DataCollector(
+            model_reporters=
             {
                 "infected": get_infected_count,
                 "susceptible": get_susceptible_count,
                 "recovered": get_recovered_count,
                 "dead": get_dead_count,
+            },
+            agent_reporters=
+            {
+                "immunity": get_immunity
             }
+
         )
 
         # Set up the Neighbourhood patches for every region in file (add to schedule later)
@@ -103,3 +109,16 @@ class InfectedModel(Model):
         # Run until no one is infected
         if self.counts["infected"] == 0:
             self.running = False
+
+        agent_immunity = self.datacollector.get_agent_vars_dataframe()
+        print(agent_immunity.head())
+        print(type(agent_immunity))
+        agent_immunity.to_excel("test.xlsx")
+
+
+def get_immunity(agent):
+    if type(agent) is PersonAgent and agent.atype != "dead":
+        return agent.immunity
+    # agents = model.schedule.agents
+    # living_persons = [agent for agent in agents if type(agent) is PersonAgent and agent.atype != "dead"]
+    # return living_persons.immunity

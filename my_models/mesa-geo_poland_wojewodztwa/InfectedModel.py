@@ -111,9 +111,6 @@ class InfectedModel(Model):
             self.running = False
 
         agent_immunity = self.datacollector.get_agent_vars_dataframe()
-        print(agent_immunity.head())
-        print(type(agent_immunity))
-        agent_immunity.to_excel("test.xlsx")
 
 
 def get_immunity(agent):

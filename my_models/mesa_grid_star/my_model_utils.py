@@ -50,12 +50,39 @@ def calculate_infected_customers_by_cashier_today(model):
     return len([agent for agent in ordinary_pearson_agents if agent.became_infected_today])
 
 
-def get_current_day(model):
-    days = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday",
-            5: "Saturday", 6: "Sunday"}
-    current_day_number = model.schedule.time % 7
+def calculate_susceptible_cashiers(model):
+    susceptible_cashier_number = 0
+    for y in range(model.grid.height):
+        for x in range(model.grid.width):
+            if model.cashiers_grouped_by_neighbourhood[(x, y)].state == "susceptible":
+                susceptible_cashier_number += 1
+    return susceptible_cashier_number
 
-    return days[current_day_number]
+
+def calculate_incubation_cashiers(model):
+    incubation_cashier_number = 0
+    for y in range(model.grid.height):
+        for x in range(model.grid.width):
+            if model.cashiers_grouped_by_neighbourhood[(x, y)].state == "incubation":
+                incubation_cashier_number += 1
+    return incubation_cashier_number
+
+
+def calculate_prodromal_cashiers(model):
+    prodromal_cashier_number = 0
+    for y in range(model.grid.height):
+        for x in range(model.grid.width):
+            if model.cashiers_grouped_by_neighbourhood[(x, y)].state == "prodromal":
+                prodromal_cashier_number += 1
+    return prodromal_cashier_number
+
+
+def calculate_execution_time(model):
+    return model.execution_time
+
+
+def get_number_of_total_ordinary_pearson_agents(model):
+    return model.total_num_of_ordinary_agents
 
 
 def get_initial_agent_state(probability_of_initial_infection):

@@ -20,17 +20,25 @@ def agent_portrayal(agent):
             portrayal["Layer"] = 0
     if type(agent) is CashierAgent:
         portrayal["Layer"] = 3
-        portrayal["Color"] = "Green"
-        portrayal["r"] = 0.1
+        portrayal["r"] = 0.7
+        if agent.state == "susceptible":
+            portrayal["Color"] = "Green"
+        elif agent.state == "incubation":
+            portrayal["Color"] = "Yellow"
+        elif agent.state == "prodromal":
+            portrayal["Color"] = "Red"
+        else:
+            portrayal["Color"] = "Black"
+
     return portrayal
 
 
-grid = CanvasGrid(agent_portrayal, grid_width=4, grid_height=4,
-                  canvas_width=200, canvas_height=200)
+grid = CanvasGrid(agent_portrayal, grid_width=20, grid_height=20,
+                  canvas_width=500, canvas_height=500)
 
 
 number_of_households_slider = UserSettableParameter('slider', "Number of households",
-                                                    value=50, min_value=1, max_value=1000, step=1)
+                                                    value=10, min_value=1, max_value=1000, step=1)
 avg_num_of_customers_in_household_slider = UserSettableParameter('slider', "Avg household size",
                                                                  value=3, min_value=1, max_value=10, step=1)
 beta_slider = UserSettableParameter('slider', "Beta value", value=0.5, min_value=0.01, max_value=1, step=0.01)
@@ -48,13 +56,20 @@ initial_infection_probability_slider = UserSettableParameter('slider', "initial_
 total_population_situation_graph = ChartModule(
     series=[{"Label": "Incubation people", "Color": "Green"},
             {"Label": "Prodromal people", "Color": "Yellow"},
-            {"Label": "Illness people", "Color": "Red"}],
+            {"Label": "Illness people", "Color": "Red"},
+            {"Label": "Dead people", "Color": "Black"}],
     data_collector_name='datacollector')
 
 total_customers_situation_graph = ChartModule(
     series=[{"Label": "Susceptible customers", "Color": "Green"},
             {"Label": "Incubation customers", "Color": "Yellow"},
             {"Label": "Prodromal customers", "Color": "Red"}],
+    data_collector_name='datacollector')
+
+total_cashiers_situation_graph = ChartModule(
+    series=[{"Label": "Susceptible cashiers", "Color": "Green"},
+            {"Label": "Incubation cashiers", "Color": "Yellow"},
+            {"Label": "Prodromal cashiers", "Color": "Red"}],
     data_collector_name='datacollector')
 
 cashier_influence_graph = ChartModule(
@@ -64,9 +79,11 @@ cashier_influence_graph = ChartModule(
 
 server = ModularServer(model_cls=DiseaseModel,
                        visualization_elements=[grid, total_population_situation_graph,
-                                               total_customers_situation_graph, cashier_influence_graph],
+                                               total_customers_situation_graph,
+                                               total_cashiers_situation_graph,
+                                               cashier_influence_graph],
                        name="Disease spread model", model_params=
-                       {"width": 4, "height": 4,
+                       {"width": 5, "height": 5,
                         "num_of_households": number_of_households_slider,
                         "avg_num_of_customers_in_household": avg_num_of_customers_in_household_slider,
                         "beta": beta_slider,

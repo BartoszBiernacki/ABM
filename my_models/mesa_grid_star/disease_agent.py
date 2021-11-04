@@ -1,7 +1,7 @@
 from mesa import Agent
 import random
 
-from my_math_utils import get_rand_int_from_exp_distribution
+from my_math_utils import *
 
 
 class OrdinaryPearsonAgent(Agent):
@@ -63,22 +63,18 @@ class OrdinaryPearsonAgent(Agent):
     # SHOPPING CUSTOMER PART ===========================================================================================
     def try_to_infect_cashier(self):
         if self.state == "prodromal":
-            cellmates = self.model.grid.get_cell_list_contents([self.pos])
-            cashier_cellmates = [agent for agent in cellmates if type(agent) is CashierAgent]
-            for cashier in cashier_cellmates:
-                if cashier.state == "susceptible":
-                    if random.uniform(0, 1) <= self.model.beta:
-                        cashier.go_into_incubation_phase()
+            cashier = self.model.cashiers_grouped_by_neighbourhood[self.pos]
+            if cashier.state == "susceptible":
+                if random.uniform(0, 1) <= self.model.beta:
+                    cashier.go_into_incubation_phase()
 
     def try_to_get_infected_by_cashier(self):
         if self.state == "susceptible":
-            cellmates = self.model.grid.get_cell_list_contents([self.pos])
-            cashier_cellmates = [agent for agent in cellmates if type(agent) is CashierAgent]
-            for cashier in cashier_cellmates:
-                if cashier.state == "prodromal" or cashier.state == 'illness':
-                    if random.uniform(0, 1) <= self.model.beta:
-                        self.go_into_incubation_phase()
-                        self.became_infected_today = True
+            cashier = self.model.cashiers_grouped_by_neighbourhood[self.pos]
+            if cashier.state == "prodromal" or cashier.state == 'illness':
+                if random.uniform(0, 1) <= self.model.beta:
+                    self.go_into_incubation_phase()
+                    self.became_infected_today = True
 
     def do_shopping(self):
         self.did_shopping_today = False

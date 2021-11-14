@@ -1,7 +1,11 @@
+import matplotlib.pyplot as plt
 import numpy as np
 from numba import jit, njit, int32, float32, float64, typeof
 from numba.experimental import jitclass
 import itertools
+import random
+from scipy.signal import find_peaks
+from scipy.optimize import curve_fit
 
 
 def get_rand_int_from_exp_distribution(mean):
@@ -53,4 +57,54 @@ def get_number_of_cell_neighbours(y, x):
         return 3
     else:
         return 4
+
+
+def create_array_of_shopping_days_for_each_household(total_num_of_households):
+    result = np.empty((total_num_of_households, 2), dtype=int)
+    for household in range(total_num_of_households):
+        result[household] = random.sample(range(0, 7), 2)
+    return result
+
+
+# Fitting function
+def func(t, A, tau):
+    return A * np.exp(-t/tau)
+
+
+def fit_exp_to_peaks(y_data, x_data=None, plot=True):
+    if x_data is None:
+        x_data = np.arange(start=0, stop=len(y_data))
+
+    if plot:
+        plt.plot(x_data, y_data, label='experimental-data')
+
+    # Find peaks
+    peak_pos_indexes = find_peaks(y_data)[0]
+    peak_pos = x_data[peak_pos_indexes]
+    peak_height = y_data[peak_pos_indexes]
+
+    if plot:
+        plt.scatter(peak_pos, peak_height, label='maxima')
+
+    # Initial guess for the parameters
+    initial_guess = [50, 10]
+
+    # Perform the curve-fit
+    popt, pcov = curve_fit(func, peak_pos, peak_height, initial_guess)
+    print(popt)
+    # print(pcov)
+
+    # x values for the fitted function
+    x_fit = x_data
+
+    # Plot the fitted function
+    if plot:
+        plt.plot(x_fit, func(x_fit, *popt), 'r', label='fit params: a=%5.3f, b=%5.3f' % tuple(popt))
+
+    plt.show()
+
+    return popt[1]
+
+
+
 

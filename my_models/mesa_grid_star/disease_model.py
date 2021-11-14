@@ -125,8 +125,9 @@ class DiseaseModel(Model):
         self.customers_grouped_by_households = np.empty((self.total_num_of_households, num_of_customers_in_household),
                                                         dtype=OrdinaryPearsonAgent)
 
-        # [household_id] --> [int1, int2], high=7 is exclusive so possible values = {0, 1, 2, 3, 4, 5, 6}
-        self.shopping_days_for_each_household = np.random.randint(0, 7, (self.total_num_of_households, 2))
+        # [household_id] --> [int1, int2], int1 != int2, possible ints = {0, 1, 2, 3, 4, 5, 6}
+        self.shopping_days_for_each_household = create_array_of_shopping_days_for_each_household(
+            total_num_of_households=self.total_num_of_households)
 
         # [household_id] --> [int1, ..., intK], int_m=customer[household_id][m].state, K=num of agents in each household
         self.agents_state_grouped_by_households = np.empty((self.total_num_of_households,

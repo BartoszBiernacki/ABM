@@ -7,6 +7,7 @@ from mesa.datacollection import DataCollector
 from my_math_utils import *
 
 from disease_agent import OrdinaryPearsonAgent, CashierAgent
+from my_model_utils import get_day
 from my_model_utils import calculate_ordinary_pearson_number_susceptible
 from my_model_utils import calculate_ordinary_pearson_number_incubation
 from my_model_utils import calculate_ordinary_pearson_number_prodromal
@@ -137,7 +138,7 @@ class DiseaseModel(Model):
         self.neighbouring_neighbourhoods_grouped_by_neighbourhood_id = \
             np.zeros((height*width, get_number_of_cell_neighbours(y=height, x=width)))
 
-        self.day_number = -1
+        self.day_number = 0
         self.current_week = 0
         self.current_day = 0
 
@@ -220,7 +221,8 @@ class DiseaseModel(Model):
                 width=width, height=height)
 
         self.datacollector = DataCollector(
-            model_reporters={"Susceptible people": calculate_ordinary_pearson_number_susceptible,
+            model_reporters={"Day": get_day,
+                             "Susceptible people": calculate_ordinary_pearson_number_susceptible,
                              "Incubation people": calculate_ordinary_pearson_number_incubation,
                              "Prodromal people": calculate_ordinary_pearson_number_prodromal,
                              "Illness people": calculate_ordinary_pearson_number_illness,

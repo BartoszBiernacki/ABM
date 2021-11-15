@@ -56,6 +56,12 @@ mortality_slider = UserSettableParameter('slider', "Mortality", value=0.1, min_v
 initial_infection_probability_slider = UserSettableParameter('slider', "initial_infection_probability", value=0.6,
                                                              min_value=0.01, max_value=1, step=0.01)
 
+start_with_infected_cashiers_only_switch = UserSettableParameter('checkbox', 'start with infected cashiers only',
+                                                                 value=True)
+
+random_activation_switch = UserSettableParameter('checkbox', 'active agents in random order', value=True)
+extra_shopping_boolean_switch = UserSettableParameter('checkbox', 'allow to extra shopping', value=True)
+
 
 exposed_population_graph = ChartModule(
     series=[{"Label": "Incubation people", "Color": "Yellow"}],
@@ -113,7 +119,7 @@ server = ModularServer(model_cls=DiseaseModel,
                         "avg_illness_period": avg_illness_period_slider,
                         "mortality": mortality_slider,
                         "initial_infection_probability": initial_infection_probability_slider,
-                        "start_with_infected_cashiers_only": True,
-                        "random_activation": True,
-                        "extra_shopping_boolean": True
+                        "start_with_infected_cashiers_only": start_with_infected_cashiers_only_switch,
+                        "random_activation": random_activation_switch,
+                        "extra_shopping_boolean": extra_shopping_boolean_switch
                         })

@@ -66,17 +66,22 @@ def create_array_of_shopping_days_for_each_household(total_num_of_households):
     return result
 
 
-# Fitting function
-def func(t, A, tau):
+# Signature of a function to fit
+def unknown_exp_func(t, A, tau):
     return A * np.exp(-t/tau)
 
 
-def fit_exp_to_peaks(y_data, x_data=None, plot=True):
+def fit_exp_to_peaks(y_data, x_data=None, plot=True, N=None, beta=None):
     if x_data is None:
         x_data = np.arange(start=0, stop=len(y_data))
 
     if plot:
-        plt.plot(x_data, y_data, label='experimental-data')
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+        legend1 = 'experimental data'
+        ax.plot(x_data, y_data, label=legend1, color="Green", linestyle='dashed', marker='o', markersize=5, zorder=0)
+
 
     # Find peaks
     peak_pos_indexes = find_peaks(y_data)[0]
@@ -84,14 +89,13 @@ def fit_exp_to_peaks(y_data, x_data=None, plot=True):
     peak_height = y_data[peak_pos_indexes]
 
     if plot:
-        plt.scatter(peak_pos, peak_height, label='maxima')
+        legend2 = 'maxima'
+        ax.scatter(peak_pos, peak_height, label=legend2, zorder=2)
 
     # Initial guess for the parameters
     initial_guess = [50, 10]
-
     # Perform the curve-fit
-    popt, pcov = curve_fit(func, peak_pos, peak_height, initial_guess)
-    print(popt)
+    popt, pcov = curve_fit(unknown_exp_func, peak_pos, peak_height, initial_guess)
     # print(pcov)
 
     # x values for the fitted function
@@ -99,11 +103,23 @@ def fit_exp_to_peaks(y_data, x_data=None, plot=True):
 
     # Plot the fitted function
     if plot:
-        plt.plot(x_fit, func(x_fit, *popt), 'r', label='fit params: a=%5.3f, b=%5.3f' % tuple(popt))
+        legend3 = r' $y =  Ae^{{-t/\tau}}$' '\n' r'$A={:.1f}$' '\n' r'$\tau = {:.1f}$'.format(popt[0], popt[1])
+        ax.plot(x_fit, unknown_exp_func(x_fit, *popt), 'r', label=legend3, zorder=1)
+        ax.set_xlabel('t, days', fontsize=12)
+        ax.set_ylabel('Number of exposed', fontsize=12)
 
-    plt.show()
+        # Show legend and its entries in correct order
+        handles, labels = ax.get_legend_handles_labels()
+        handles = [handles[0], handles[2], handles[1]]
+        labels = [labels[0], labels[2], labels[1]]
+        ax.legend(handles, labels)
 
-    return popt[1]
+        if N and beta:
+            ax.set_title(r"$N = {:1d}, \beta = {:.3f}$".format(N, beta))
+        plt.tight_layout()
+        plt.show()
+
+    return popt[1]  # returns tau
 
 
 

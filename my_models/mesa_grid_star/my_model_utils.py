@@ -1,4 +1,10 @@
+from matplotlib.ticker import FormatStrFormatter
+
 from my_math_utils import *
+
+
+def get_day(model):
+    return model.day_number
 
 
 def get_incubation_period(model):
@@ -81,7 +87,6 @@ def calculate_replaced_cashiers(model):
     return model.repleaced.cashiers
 
 
-
 def calculate_execution_time(model):
     return model.execution_time
 
@@ -136,3 +141,6 @@ def get_extra_shopping_days_for_each_household(total_num_of_households, array_to
 
     result = array_to_fill.T
     return result
+
+
+

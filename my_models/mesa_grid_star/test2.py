@@ -15,30 +15,51 @@ import sys
 
 from my_math_utils import *
 
-a = [1000, 1000, 300, 400, 500]
-b = [0.05, 0.03, 0.06, 0.12, 0.11]
-c = [66, 65, 30, 40, 11]
 
-df = pd.DataFrame(np.array([a, b, c]).T, columns=['N', 'beta', 'tau'])
+@njit(cache=True)
+def func(neighbouring_neighbourhoods_grouped_by_neighbourhood_id, array_to_fill):
+    # result[neighbourhood_id][num_of_household_in_that_neighbourhood][week] --> neighbouring neighbourhood to visit
 
-Ns = df['N'].unique()
+    total_num_of_neighbourhoods, num_of_neighbouring_neighbourhoods = \
+        neighbouring_neighbourhoods_grouped_by_neighbourhood_id.shape
 
-popt = [65.4, 21.5]
+    if num_of_neighbouring_neighbourhoods:  # do sth if there is at least one neighbour
+        total_num_of_neighbourhoods, num_of_households_in_one_neighbourhood, num_of_weeks_to_simulate = np.shape(
+            array_to_fill)
+        num_of_needed_cycles = num_of_weeks_to_simulate // num_of_neighbouring_neighbourhoods + 1
+        for neighbourhood_id in range(total_num_of_neighbourhoods):
+            for household in range(num_of_households_in_one_neighbourhood):
+                covered_weeks = 0
+                for cycle in range(num_of_needed_cycles):
+                    ran = np.random.permutation(neighbouring_neighbourhoods_grouped_by_neighbourhood_id[
+                                                   neighbourhood_id])
+                    for i in range(num_of_neighbouring_neighbourhoods):
+                        array_to_fill[neighbourhood_id][household][covered_weeks] = ran[i]
+                        covered_weeks += 1
+                        if covered_weeks == num_of_weeks_to_simulate:
+                            break
+        return array_to_fill
 
-for N in Ns:
-	filt = df['N'] == N
 
-	ax = df[filt].plot(x='beta', y='tau', style='.-')
-	ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-	ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-	ax.set_xlabel(r' $y =  Ae^{-t/\tau}$', fontsize=12)
-	ax.set_ylabel(r'$\tau$, days', fontsize=12)
-	ax.legend(labels=[r' $y =  Ae^{{-t/\tau}}$' '\n' r'$A={:.1f}$' '\n' r'$\tau = {:.1f}$'.format(popt[0], popt[1])])
-	plt.tight_layout()
-	plt.show()
+neighbouring_neighbourhoods_grouped_by_neighbourhood_id = np.array([[1, 4],
+                                                                    [0, 2],
+                                                                    [1, 3],
+                                                                    [2, 4],
+                                                                    [3, 0]])
 
 
+array_to_fill = np.empty((5, 8, 10), dtype=np.int8)
 
+with cProfile.Profile() as pr:
+    order = func(neighbouring_neighbourhoods_grouped_by_neighbourhood_id
+                 =neighbouring_neighbourhoods_grouped_by_neighbourhood_id,
+                 array_to_fill=array_to_fill)
+stats = pstats.Stats(pr)
+stats.sort_stats(pstats.SortKey.TIME)
+stats.print_stats(10)
 
+print(order)
 
-
+a = np.array([0, 1, 2, 3, 4, 5, 6, 4, 11])
+ind = [2, 7]
+print(a[ind])

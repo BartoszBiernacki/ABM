@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from numba import jit, njit, int32, float32, float64, typeof
-from numba.experimental import jitclass
+from numba import jit, njit, int8, float32, float64, typeof
 import itertools
 import random
 from scipy.signal import find_peaks
@@ -45,7 +44,7 @@ def group_tuples_by_start(list_of_tuples, start_length):
     return result
 
 
-@njit
+@njit(cache=True)
 def get_number_of_cell_neighbours(y, x):
     if x == y == 1:
         return 0
@@ -57,13 +56,6 @@ def get_number_of_cell_neighbours(y, x):
         return 3
     else:
         return 4
-
-
-def create_array_of_shopping_days_for_each_household(total_num_of_households):
-    result = np.empty((total_num_of_households, 2), dtype=int)
-    for household in range(total_num_of_households):
-        result[household] = random.sample(range(0, 7), 2)
-    return result
 
 
 # Signature of a function to fit
@@ -81,7 +73,6 @@ def fit_exp_to_peaks(y_data, x_data=None, plot=True, N=None, beta=None):
 
         legend1 = 'experimental data'
         ax.plot(x_data, y_data, label=legend1, color="Green", linestyle='dashed', marker='o', markersize=5, zorder=0)
-
 
     # Find peaks
     peak_pos_indexes = find_peaks(y_data)[0]

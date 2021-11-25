@@ -3,6 +3,7 @@ from mesa.visualization.modules import CanvasGrid  # to show our grid type imple
 from mesa.visualization.ModularVisualization import ModularServer
 from mesa.visualization.UserParam import UserSettableParameter
 from mesa.visualization.modules import ChartModule
+
 from disease_agent import OrdinaryPearsonAgent, CashierAgent
 
 
@@ -41,7 +42,7 @@ height_slider = UserSettableParameter('slider', "Grid height", value=3, min_valu
 width_slider = UserSettableParameter('slider', "Grid width", value=3, min_value=1, max_value=20, step=1)
 
 number_of_households_slider = UserSettableParameter('slider', "Number of households",
-                                                    value=10, min_value=1, max_value=1000, step=5)
+                                                    value=1000, min_value=1, max_value=1000, step=5)
 avg_num_of_customers_in_household_slider = UserSettableParameter('slider', "Avg household size",
                                                                  value=1, min_value=1, max_value=10, step=1)
 beta_slider = UserSettableParameter('slider', "Beta value", value=0.05, min_value=0.0, max_value=1, step=0.01)
@@ -53,15 +54,26 @@ avg_prodromal_period_slider = UserSettableParameter('slider', "avg_prodromal_per
 avg_illness_period_slider = UserSettableParameter('slider', "avg_illness_period (days)", value=15, min_value=10,
                                                   max_value=20, step=1)
 mortality_slider = UserSettableParameter('slider', "Mortality", value=0.1, min_value=0.0, max_value=1, step=0.01)
-initial_infection_probability_slider = UserSettableParameter('slider', "initial_infection_probability", value=0.6,
+initial_infection_probability_slider = UserSettableParameter('slider', "initial_infection_probability", value=0.2,
                                                              min_value=0.01, max_value=1, step=0.01)
 
 start_with_infected_cashiers_only_switch = UserSettableParameter('checkbox', 'start with infected cashiers only',
                                                                  value=True)
 
-random_activation_switch = UserSettableParameter('checkbox', 'active agents in random order', value=True)
+random_ordinary_pearson_activation_switch = UserSettableParameter('checkbox', 'active ordinary agents in random order',
+                                                                  value=True)
 extra_shopping_boolean_switch = UserSettableParameter('checkbox', 'allow to extra shopping', value=True)
+die_at_once_switch = UserSettableParameter('checkbox', 'agents die at once', value=True)
 
+collect_data_at_the_end_of_the_day_switch = UserSettableParameter('checkbox', 'collect data at the ond of the day',
+                                                                  value=True)
+update_cashier_state_time = UserSettableParameter('choice', "decide when to update  cashier state",
+                                                  value='random',
+                                                  choices=['random', 'before shopping', 'after shopping'])
+
+update_customer_state_before_shopping_switch = UserSettableParameter('checkbox',
+                                                                     'update customer state before shopping',
+                                                                     value=True)
 
 exposed_population_graph = ChartModule(
     series=[{"Label": "Incubation people", "Color": "Yellow"}],
@@ -73,8 +85,7 @@ extra_customers_graph = ChartModule(
 
 
 total_population_situation_graph = ChartModule(
-    series=[{"Label": "Susceptible people", "Color": "Green"},
-            {"Label": "Incubation people", "Color": "Yellow"},
+    series=[{"Label": "Incubation people", "Color": "Yellow"},
             {"Label": "Prodromal people", "Color": "Orange"},
             {"Label": "Illness people", "Color": "Red"},
             {"Label": "Dead people", "Color": "Black"},
@@ -82,7 +93,7 @@ total_population_situation_graph = ChartModule(
     data_collector_name='datacollector')
 
 total_customers_situation_graph = ChartModule(
-    series=[{"Label": "Susceptible customers", "Color": "Green"},
+    series=[
             {"Label": "Incubation customers", "Color": "Yellow"},
             {"Label": "Prodromal customers", "Color": "Red"},
             {"Label": "Recovery customers", "Color": "Blue"}],
@@ -101,8 +112,8 @@ cashier_influence_graph = ChartModule(
 
 server = ModularServer(model_cls=DiseaseModel,
                        visualization_elements=[grid,
-                                               exposed_population_graph,
-                                               extra_customers_graph,
+                                               # exposed_population_graph,
+                                               # extra_customers_graph,
                                                total_population_situation_graph,
                                                total_customers_situation_graph,
                                                total_cashiers_situation_graph,
@@ -118,8 +129,15 @@ server = ModularServer(model_cls=DiseaseModel,
                         "avg_prodromal_period": avg_prodromal_period_slider,
                         "avg_illness_period": avg_illness_period_slider,
                         "mortality": mortality_slider,
+                        "die_at_once": die_at_once_switch,
                         "initial_infection_probability": initial_infection_probability_slider,
                         "start_with_infected_cashiers_only": start_with_infected_cashiers_only_switch,
-                        "random_activation": random_activation_switch,
-                        "extra_shopping_boolean": extra_shopping_boolean_switch
+                        "random_ordinary_pearson_activation": random_ordinary_pearson_activation_switch,
+                        "extra_shopping_boolean": extra_shopping_boolean_switch,
+                        "max_steps": 1000
                         })
+
+
+def run_simulation_in_browser():
+    server.port = 8521  # default
+    server.launch()

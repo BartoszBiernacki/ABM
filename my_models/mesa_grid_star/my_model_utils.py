@@ -1,10 +1,8 @@
-from matplotlib.ticker import FormatStrFormatter
-
 from my_math_utils import *
 
 
 def get_day(model):
-    return model.day_number
+    return model.day
 
 
 def get_incubation_period(model):
@@ -91,8 +89,17 @@ def calculate_execution_time(model):
     return model.execution_time
 
 
-def get_number_of_total_ordinary_pearson_agents(model):
-    return model.total_num_of_ordinary_agents
+def get_initial_available_shopping_household_members_dictionary(customers_grouped_by_households,
+                                                                total_num_of_households):
+    available_shopping_household_members = {}
+    for household_id in range(total_num_of_households):
+        household_members = customers_grouped_by_households[household_id]
+        healthy_household_members = []
+        for i, household_member in enumerate(household_members):
+            if household_member.is_health_enough_to_do_shopping():
+                healthy_household_members.append(household_member)
+        available_shopping_household_members[household_id] = healthy_household_members
+    return available_shopping_household_members
 
 
 def find_neighbouring_neighbourhoods(all_cashiers, neighbourhood_pos_to_id):
@@ -114,33 +121,86 @@ def find_neighbouring_neighbourhoods(all_cashiers, neighbourhood_pos_to_id):
     return result
 
 
-@njit
-def get_order_of_shopping_in_neighbouring_neighbourhoods(neighbouring_neighbourhoods_grouped_by_neighbourhood_id,
-                                                         array_to_fill):
-    # result[neighbourhood_id][num_of_specific_household_in_that_neighbourhood] --> list of neighbouring
-    # neighbourhoods.
-    # Elements in list are in random order.
-    z, y, x = np.shape(array_to_fill)
-    # z = num of households in neighbourhood
-    # y = num of all neighbourhoods
-    # x = num of neighbouring neighbourhoods
-    for i in range(z):
-        for j in range(y):
-            array_to_fill[i][j] = np.random.permutation(neighbouring_neighbourhoods_grouped_by_neighbourhood_id[j])
+@njit(cache=True)
+def create_order_of_shopping_in_neighbouring_neighbourhoods(neighbouring_neighbourhoods_grouped_by_neighbourhood_id,
+                                                            array_to_fill):
+    # result[neighbourhood_id][num_of_household_in_that_neighbourhood][week] --> neighbouring neighbourhood to visit
+
+    total_num_of_neighbourhoods, num_of_neighbouring_neighbourhoods = \
+        neighbouring_neighbourhoods_grouped_by_neighbourhood_id.shape
+
+    if num_of_neighbouring_neighbourhoods:  # do sth if there is at least one neighbour
+        total_num_of_neighbourhoods, num_of_households_in_one_neighbourhood, num_of_weeks_to_simulate = np.shape(
+            array_to_fill)
+        num_of_needed_cycles = num_of_weeks_to_simulate // num_of_neighbouring_neighbourhoods + 1
+        for neighbourhood_id in range(total_num_of_neighbourhoods):
+            for household in range(num_of_households_in_one_neighbourhood):
+                covered_weeks = 0
+                for cycle in range(num_of_needed_cycles):
+                    ran = np.random.permutation(neighbouring_neighbourhoods_grouped_by_neighbourhood_id[
+                                                    neighbourhood_id])
+                    for i in range(num_of_neighbouring_neighbourhoods):
+                        array_to_fill[neighbourhood_id][household][covered_weeks] = ran[i]
+                        covered_weeks += 1
+                        if covered_weeks == num_of_weeks_to_simulate:
+                            break
+        return array_to_fill
+
+
+@njit(cache=True)
+def create_array_of_shopping_days_for_each_household_for_each_week(array_to_fill, days_array):
+    total_num_of_weeks, total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
+    for week in range(total_num_of_weeks):
+        for household in range(total_num_of_households):
+            random.shuffle(days_array)
+            array_to_fill[week][household] = days_array[: num_of_shopping_days_in_week]
     return array_to_fill
 
 
-@njit
-def get_extra_shopping_days_for_each_household(total_num_of_households, array_to_fill, width, height):
-    # [household_id] --> [day_in_week_1, day_in_week_2, ..., day_in_week_n], n={0, 1, 2, 3, 4} depends on grid
-    needed_number_of_weeks = int(get_number_of_cell_neighbours(y=height, x=width))
-    array_to_fill = array_to_fill.T
-    for i in range(0, needed_number_of_weeks*7, 7):
-        week = np.random.randint(i, i+7, total_num_of_households)
-        array_to_fill[int(i/7)] = week
+@njit(cache=True)
+def find_out_who_wants_to_do_shopping(shopping_days_for_each_household_for_each_week,
+                                      day,
+                                      agents_state_grouped_by_households,
+                                      array_to_fill):
 
-    result = array_to_fill.T
-    return result
+    total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
+
+    day_mod_7 = day % 7
+    week = day // 7
+    # return[household_id][0 or 1], if 0 --> volunteer_pos, if 1 --> volunteer_availability
+    for household_id in range(total_num_of_households):
+        if day_mod_7 in shopping_days_for_each_household_for_each_week[week][household_id]:
+            volunteer_pos = np.argmax(agents_state_grouped_by_households[household_id] <= 2)
+            array_to_fill[household_id][0] = volunteer_pos
+
+            if agents_state_grouped_by_households[household_id][volunteer_pos] <= 2:
+                array_to_fill[household_id][1] = 1
+        else:
+            array_to_fill[household_id][1] = 0
+
+    return array_to_fill
 
 
+# @njit(cache=True)
+def find_out_who_wants_to_do_extra_shopping(extra_shopping_days_for_each_household_for_each_week,
+                                            day,
+                                            agents_state_grouped_by_households,
+                                            array_to_fill):
+
+    total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
+
+    day_mod_7 = day % 7
+    week = day // 7
+    # return[household_id][0 or 1], if 0 --> volunteer_pos, if 1 --> volunteer_availability
+    for household_id in range(total_num_of_households):
+        if day_mod_7 in extra_shopping_days_for_each_household_for_each_week[week][household_id]:
+            volunteer_pos = np.argmax(agents_state_grouped_by_households[household_id] <= 2)
+            array_to_fill[household_id][0] = volunteer_pos
+
+            if agents_state_grouped_by_households[household_id][volunteer_pos] <= 2:
+                array_to_fill[household_id][1] = 1
+        else:
+            array_to_fill[household_id][1] = 0
+
+    return array_to_fill
 

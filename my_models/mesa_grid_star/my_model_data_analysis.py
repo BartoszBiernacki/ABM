@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
+from scipy.interpolate import interp1d
 
 from mesa.batchrunner import BatchRunner
 from disease_model import DiseaseModel
@@ -16,6 +17,7 @@ from my_math_utils import group_tuples_by_start, fit_exp_to_peaks
 # items are averaged model parameters
 def run_simulation(variable_params, fixed_params, visualisation, multi, profiling, iterations, max_steps,
                    modified_brMP=False):
+    fixed_params['max_steps'] = max_steps
     if modified_brMP:
         from mesa_batchrunner_modified import BatchRunnerMP
     else:
@@ -95,8 +97,12 @@ def get_avg_results(data_collector_model_results, variable_params):
     return result
 
 
-def find_tau_for_given_Ns_and_betas(Ns, betas, iterations, max_steps, plot_exp_fittings=True,
-                                    plot_tau_vs_beta_for_each_N=True, modified_brMP=False, random_activation=False):
+def find_tau_for_given_Ns_and_betas(Ns, betas, iterations, max_steps,
+                                    die_at_once,
+                                    random_ordinary_pearson_activation,
+                                    plot_exp_fittings=True,
+                                    plot_tau_vs_beta_for_each_N=True,
+                                    modified_brMP=False):
     # BATCH RUNNER SETTINGS---------------------------------------------------------------------------------------------
     fixed_params = {"width": 1,
                     "height": 1,
@@ -106,9 +112,10 @@ def find_tau_for_given_Ns_and_betas(Ns, betas, iterations, max_steps, plot_exp_f
                     "avg_prodromal_period": 3,
                     "avg_illness_period": 15,
                     "mortality": 0.0,
+                    "die_at_once": die_at_once,
                     "initial_infection_probability": 0.7,
                     "start_with_infected_cashiers_only": True,
-                    "random_activation": random_activation,
+                    "random_ordinary_pearson_activation": random_ordinary_pearson_activation,
                     "extra_shopping_boolean": False}
 
     variable_params = {"num_of_households_in_neighbourhood": Ns,
@@ -158,3 +165,104 @@ def plot_tau_vs_beta_for_given_Ns(df):
         ax.legend(labels=[f"N={int(N)}"])
         plt.tight_layout()
         plt.show()
+
+
+def run_test_simulation(Ns, betas, iterations, max_steps,
+                            die_at_once,
+                            random_ordinary_pearson_activation,
+                            modified_brMP=False):
+    # BATCH RUNNER SETTINGS---------------------------------------------------------------------------------------------
+    fixed_params = {"width": 1,
+                    "height": 1,
+                    "num_of_customers_in_household": 1,
+                    "num_of_cashiers_in_neighbourhood": 1,
+                    "avg_incubation_period": 5,
+                    "avg_prodromal_period": 3,
+                    "avg_illness_period": 15,
+                    "mortality": 0.0,
+                    "die_at_once": die_at_once,
+                    "initial_infection_probability": 0.7,
+                    "start_with_infected_cashiers_only": True,
+                    "random_ordinary_pearson_activation": random_ordinary_pearson_activation,
+                    "extra_shopping_boolean": False}
+
+    variable_params = {"num_of_households_in_neighbourhood": Ns,
+                       "beta": betas}
+    # ---------------------------------------------------------------------------------------------------------------------
+
+    results = run_simulation(variable_params=variable_params,
+                             fixed_params=fixed_params,
+                             visualisation=False,
+                             multi=True,
+                             profiling=False,
+                             iterations=iterations,
+                             max_steps=max_steps,
+                             modified_brMP=modified_brMP)
+
+    for key in results.keys():
+        avg_df = results[key]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+        avg_df.plot(x='Day', y='Incubation people', marker='.', color='orange', ax=ax)
+        avg_df.plot(x='Day', y='Incubation customers', marker='.', color='red', ax=ax)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+        avg_df.plot(x='Day', y='Prodromal people', marker='.', color='yellow', ax=ax)
+        avg_df.plot(x='Day', y='Prodromal customers', marker='.', color='red', ax=ax)
+
+        print(avg_df['Incubation people'].divide(avg_df['Incubation customers']))
+        print(avg_df['Prodromal people'].divide(avg_df['Prodromal customers']))
+
+        plt.show()
+
+
+def reproduce_plot_by_website(filename="data_extracted_from_fig1.csv"):
+    df = pd.read_csv(filename, header=None)
+    x_img = np.array(df.iloc[:, [0]]).flatten()
+    y_img = np.array(df.iloc[:, [1]]).flatten()
+    print(x_img.size)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    ax.plot(x_img, y_img)
+    
+    x = [0, 4, 5, 9, 12, 13, 16, 17, 20, 21, 24, 25]
+    y = [0, 56, 56, 13.5, 38.5, 38.5, 20.5, 19.2, 28.5, 29.4, 19.9, 18.3]
+    ax.plot(x, y, color='red', linestyle='-')
+    ax.scatter(x, y, color='red')
+
+    # Major ticks every 20, minor ticks every 5
+    major_ticks = np.arange(0, 51, 5)
+    minor_ticks = np.arange(0, 51, 1)
+
+    ax.set_xticks(major_ticks)
+    ax.set_xticks(minor_ticks, minor=True)
+
+    ax.grid(which='minor', alpha=0.5)
+    ax.grid(which='major', alpha=1)
+    ax.set(xlim=(-1, 26))
+
+    # plt.show()
+
+    x_int_indexes = np.array(np.linspace(0, len(x_img)-1, int(max(x_img))), dtype=int)
+
+    x_int = np.array(x_img[x_int_indexes], dtype=int)
+    y_int = y_img[x_int_indexes]
+
+    df = pd.DataFrame(data=np.array([x_int, y_int]))
+    pd.set_option("display.max_rows", None, "display.max_columns", None)
+    print(df)
+    
+    ax.plot(x_int, y_int, color='green', linestyle='-')
+    plt.show()
+    print(np.argmax(y_img))
+    print(x_img[np.argmax(y_img)])
+
+    print(x_int_indexes)
+
+

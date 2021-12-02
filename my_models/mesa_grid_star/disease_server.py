@@ -4,21 +4,12 @@ from mesa.visualization.ModularVisualization import ModularServer
 from mesa.visualization.UserParam import UserSettableParameter
 from mesa.visualization.modules import ChartModule
 
-from disease_agent import OrdinaryPearsonAgent, CashierAgent
+from disease_agent import CashierAgent
 
 
 def agent_portrayal(agent):
     portrayal = {"Shape": "circle", "Filled": "true", "r": 0.5}
 
-    if type(agent) is OrdinaryPearsonAgent:
-        # print(f"Agent {agent.unique_id} is {agent.state}")
-        if agent.state == 0:
-            portrayal["Layer"] = 2
-            portrayal["Color"] = "Blue"
-            portrayal["r"] = 0.2
-        else:
-            portrayal["Color"] = "Red"
-            portrayal["Layer"] = 0
     if type(agent) is CashierAgent:
         portrayal["Layer"] = 3
         portrayal["r"] = 0.7
@@ -41,6 +32,9 @@ grid = CanvasGrid(agent_portrayal, grid_width=20, grid_height=20,
 height_slider = UserSettableParameter('slider', "Grid height", value=3, min_value=1, max_value=20, step=1)
 width_slider = UserSettableParameter('slider', "Grid width", value=3, min_value=1, max_value=20, step=1)
 
+num_of_infected_cashiers_at_start_slider = UserSettableParameter('slider', "Number of infected cashiers at start",
+                                                                 value=3, min_value=1, max_value=400, step=1)
+
 number_of_households_slider = UserSettableParameter('slider', "Number of households",
                                                     value=1000, min_value=1, max_value=1000, step=5)
 avg_num_of_customers_in_household_slider = UserSettableParameter('slider', "Avg household size",
@@ -49,31 +43,27 @@ beta_slider = UserSettableParameter('slider', "Beta value", value=0.05, min_valu
 
 avg_incubation_period_slider = UserSettableParameter('slider', "avg_incubation_period (days)", value=5, min_value=1,
                                                      max_value=10, step=1)
+
+incubation_period_bins_slider = UserSettableParameter('slider', "Num of possible incubation period values",
+                                                      value=1, min_value=1, max_value=9, step=2)
+
 avg_prodromal_period_slider = UserSettableParameter('slider', "avg_prodromal_period (days)", value=3, min_value=1,
                                                     max_value=8, step=1)
+prodromal_period_bins_slider = UserSettableParameter('slider', "Num of possible prodromal period values", value=1,
+                                                     min_value=1, max_value=9, step=2)
+
 avg_illness_period_slider = UserSettableParameter('slider', "avg_illness_period (days)", value=15, min_value=10,
                                                   max_value=20, step=1)
+illness_period_bins_slider = UserSettableParameter('slider', "Num of possible illness period values", value=1,
+                                                   min_value=1, max_value=9, step=2)
+
 mortality_slider = UserSettableParameter('slider', "Mortality", value=0.1, min_value=0.0, max_value=1, step=0.01)
-initial_infection_probability_slider = UserSettableParameter('slider', "initial_infection_probability", value=0.2,
-                                                             min_value=0.01, max_value=1, step=0.01)
 
-start_with_infected_cashiers_only_switch = UserSettableParameter('checkbox', 'start with infected cashiers only',
-                                                                 value=True)
+die_at_once_switch = UserSettableParameter('checkbox', 'Die at once', value=False)
 
-random_ordinary_pearson_activation_switch = UserSettableParameter('checkbox', 'active ordinary agents in random order',
-                                                                  value=True)
 extra_shopping_boolean_switch = UserSettableParameter('checkbox', 'allow to extra shopping', value=True)
-die_at_once_switch = UserSettableParameter('checkbox', 'agents die at once', value=True)
+infect_housemates_boolean_switch = UserSettableParameter('checkbox', 'Enable housemates infections', value=True)
 
-collect_data_at_the_end_of_the_day_switch = UserSettableParameter('checkbox', 'collect data at the ond of the day',
-                                                                  value=True)
-update_cashier_state_time = UserSettableParameter('choice', "decide when to update  cashier state",
-                                                  value='random',
-                                                  choices=['random', 'before shopping', 'after shopping'])
-
-update_customer_state_before_shopping_switch = UserSettableParameter('checkbox',
-                                                                     'update customer state before shopping',
-                                                                     value=True)
 
 exposed_population_graph = ChartModule(
     series=[{"Label": "Incubation people", "Color": "Yellow"}],
@@ -112,28 +102,30 @@ cashier_influence_graph = ChartModule(
 
 server = ModularServer(model_cls=DiseaseModel,
                        visualization_elements=[grid,
-                                               # exposed_population_graph,
-                                               # extra_customers_graph,
+                                               exposed_population_graph,
+                                               extra_customers_graph,
                                                total_population_situation_graph,
                                                total_customers_situation_graph,
                                                total_cashiers_situation_graph,
-                                               cashier_influence_graph],
+                                               cashier_influence_graph
+                                               ],
                        name="Disease spread model", model_params=
                        {"height": height_slider,
                         "width": width_slider,
                         "num_of_households_in_neighbourhood": number_of_households_slider,
                         "num_of_customers_in_household": avg_num_of_customers_in_household_slider,
-                        "num_of_cashiers_in_neighbourhood": 1,
                         "beta": beta_slider,
                         "avg_incubation_period": avg_incubation_period_slider,
+                        "incubation_period_bins": incubation_period_bins_slider,
                         "avg_prodromal_period": avg_prodromal_period_slider,
+                        "prodromal_period_bins": prodromal_period_bins_slider,
                         "avg_illness_period": avg_illness_period_slider,
+                        "illness_period_bins": illness_period_bins_slider,
+                        "num_of_infected_cashiers_at_start": num_of_infected_cashiers_at_start_slider,
                         "mortality": mortality_slider,
                         "die_at_once": die_at_once_switch,
-                        "initial_infection_probability": initial_infection_probability_slider,
-                        "start_with_infected_cashiers_only": start_with_infected_cashiers_only_switch,
-                        "random_ordinary_pearson_activation": random_ordinary_pearson_activation_switch,
                         "extra_shopping_boolean": extra_shopping_boolean_switch,
+                        "infect_housemates_boolean": infect_housemates_boolean_switch,
                         "max_steps": 1000
                         })
 

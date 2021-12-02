@@ -1,131 +1,180 @@
 from mesa import Model
-from mesa.time import RandomActivation
 from mesa_time_modified import OrderedActivation
 from mesa.space import MultiGrid
 from mesa.datacollection import DataCollector
 
 from my_math_utils import *
 
-from disease_agent import OrdinaryPearsonAgent, CashierAgent
-from my_model_utils import create_array_of_shopping_days_for_each_household_for_each_week, \
-    find_out_who_wants_to_do_extra_shopping, get_day
+from disease_agent import CashierAgent
+from my_model_utils import create_array_of_shopping_days_for_each_household_for_each_week
+from my_model_utils import neigh_id_of_extra_shopping
+from my_model_utils import make_ordinary_shopping_core
+from my_model_utils import make_extra_shopping_core
+from my_model_utils import update_A_states_core
+from my_model_utils import update_C_states_core
+from my_model_utils import find_out_who_wants_to_do_extra_shopping
 from my_model_utils import find_out_who_wants_to_do_shopping
-from my_model_utils import calculate_ordinary_pearson_number_susceptible
-from my_model_utils import calculate_ordinary_pearson_number_incubation
-from my_model_utils import calculate_ordinary_pearson_number_prodromal
-from my_model_utils import calculate_ordinary_pearson_number_illness
-from my_model_utils import calculate_ordinary_pearson_number_dead
-from my_model_utils import calculate_ordinary_pearson_number_recovery
-from my_model_utils import calculate_susceptible_customers
-from my_model_utils import calculate_incubation_customers
-from my_model_utils import calculate_prodromal_customers
-from my_model_utils import calculate_recovery_customers
-from my_model_utils import calculate_extra_customers
-from my_model_utils import calculate_incubation_cashiers
-from my_model_utils import calculate_prodromal_cashiers
-from my_model_utils import calculate_susceptible_cashiers
-from my_model_utils import create_order_of_shopping_in_neighbouring_neighbourhoods
+from my_model_utils import set_on_shopping_true_depends_on_shopping_situation
+from my_model_utils import set_on_extra_shopping_true_depends_on_shopping_situation
 from my_model_utils import find_neighbouring_neighbourhoods
+from my_model_utils import try_to_infect_housemates_core
+from my_model_utils import get_prodromal_period
 
-from my_model_utils import calculate_infected_customers_by_cashier_today
+# Ordinary population
+from collectors import calculate_ordinary_pearson_number_susceptible
+from collectors import calculate_ordinary_pearson_number_incubation
+from collectors import calculate_ordinary_pearson_number_prodromal
+from collectors import calculate_ordinary_pearson_number_illness
+from collectors import calculate_ordinary_pearson_number_dead
+from collectors import calculate_ordinary_pearson_number_recovery
+
+# Cashiers population
+from collectors import calculate_incubation_cashiers
+from collectors import calculate_prodromal_cashiers
+from collectors import calculate_susceptible_cashiers
+from collectors import calculate_replaced_cashiers
+
+# Ordinary shopping
+from collectors import calculate_ordinary_customers
+from collectors import calculate_susceptible_customers
+from collectors import calculate_incubation_customers
+from collectors import calculate_prodromal_customers
+from collectors import calculate_recovery_customers
+from collectors import calculate_infected_by_self_cashier_today
+
+# Extra shopping
+from collectors import calculate_extra_customers
+from collectors import calculate_extra_susceptible_customers
+from collectors import calculate_extra_incubation_customers
+from collectors import calculate_extra_prodromal_customers
+from collectors import calculate_extra_recovery_customers
+from collectors import calculate_infected_by_extra_cashier_today
+
+# Others
+from collectors import get_day
 
 
 class DiseaseModel(Model):
-    def __init__(self,  width, height, num_of_households_in_neighbourhood, num_of_customers_in_household,
-                 num_of_cashiers_in_neighbourhood,
-                 beta, avg_incubation_period, avg_prodromal_period, avg_illness_period, mortality, die_at_once,
-                 initial_infection_probability,
-                 start_with_infected_cashiers_only,
-                 random_ordinary_pearson_activation,
+    def __init__(self,  width, height,
+                 num_of_households_in_neighbourhood,
+                 num_of_customers_in_household,
+                 beta,
+                 avg_incubation_period, incubation_period_bins,
+                 avg_prodromal_period, prodromal_period_bins,
+                 avg_illness_period, illness_period_bins,
+                 num_of_infected_cashiers_at_start,
+                 mortality, die_at_once,
                  extra_shopping_boolean,
+                 infect_housemates_boolean,
                  max_steps):
         super().__init__()
         self.running = True  # required for BatchRunner
-        self.start_with_infected_cashiers_only = start_with_infected_cashiers_only
+        
         self.num_of_households_in_neighbourhood = num_of_households_in_neighbourhood
         self.num_of_customers_in_household = num_of_customers_in_household
-        self.num_of_cashiers_in_neighbourhood = num_of_cashiers_in_neighbourhood
-        self.beta = beta
+        
         self.avg_incubation_period = avg_incubation_period
+        self.incubation_period_bins = incubation_period_bins
         self.avg_prodromal_period = avg_prodromal_period
+        self.prodromal_period_bins = prodromal_period_bins
         self.avg_illness_period = avg_illness_period
+        self.illness_period_bins = illness_period_bins
+
+        self.beta = beta
         self.mortality = mortality
+        self.num_of_infected_cashiers_at_start = num_of_infected_cashiers_at_start
         self.die_at_once = die_at_once
-        self.probability_of_staying_alive_after_one_day_of_illness = (1 - self.mortality) ** (1 / self.avg_illness_period)
-        self.initial_infection_probability = initial_infection_probability
+        self.prob_of_survive_one_day = (1 - self.mortality) ** (1 / self.avg_illness_period)
+        
         self.extra_shopping_boolean = extra_shopping_boolean
+        self.infect_housemates_boolean = infect_housemates_boolean
         self.max_steps = max_steps
 
         self.current_id = 0
         self.day = 0
+        
+        # Helpful attributes *****************************************************************************************
+        self.total_neighbourhoods = int(width * height)
+        self.total_households = int(self.num_of_households_in_neighbourhood * width * height)
+        self.number_of_weeks_to_make_shopping_everywhere = nearest_neighbours(y=height, x=width)
+        self.max_weeks = self.max_steps // 7 + 1
+        self.cashiers_by_neigh = np.empty(width*height, dtype=CashierAgent)
+        self.neigh_id_by_house_id = np.empty(self.total_households, dtype=np.int8)
+        self.suspicious_households = np.zeros(self.total_households, dtype=bool)
+        self.neigh_id_of_infected_cashiers_at_start =\
+            random.sample(range(int(width*height)), self.num_of_infected_cashiers_at_start)
+        # *************************************************************************************************************
+        
+        # Variety of disease stages duration **************************************************************************
+        # Incubation
+        S, exponents = get_S_and_exponents_for_sym_hist(bins=self.incubation_period_bins)
+        self.S_incubation = S
+        self.exponents_incubation = exponents
+        # Prodromal
+        S, exponents = get_S_and_exponents_for_sym_hist(bins=self.prodromal_period_bins)
+        self.S_prodromal = S
+        self.exponents_prodromal = exponents
+        # Illness
+        S, exponents = get_S_and_exponents_for_sym_hist(bins=self.illness_period_bins)
+        self.S_illness = S
+        self.exponents_illness = exponents
+        # *************************************************************************************************************
 
-        # model necessary attributes *********************************************************************************
+        # Model necessary attributes *********************************************************************************
         self.grid = MultiGrid(width=width, height=height, torus=True)
-        if random_ordinary_pearson_activation:
-            self.schedule = RandomActivation(self)
-        else:
-            self.schedule = OrderedActivation(self)
+        self.schedule = OrderedActivation(self)
         # ************************************************************************************************************
 
         # SETTING SHOPPING DAYS FOR EACH HOUSEHOLD *******************************************************************
         # [week][household_id] --> [int1, int2], int1 != int2, possible ints = {0, 1, 2, 3, 4, 5, 6}
+        weeks = int(self.max_steps // 7 + 1)
+        shopping_days_in_week = 2
         self.shopping_days_for_each_household_for_each_week = \
             create_array_of_shopping_days_for_each_household_for_each_week(
-                array_to_fill=np.empty((self.max_steps // 7 + 1, self.num_of_households_in_neighbourhood * width *
-                                        height, 2), dtype=np.int8),
+                array_to_fill=np.empty((weeks, self.total_households, shopping_days_in_week), dtype=np.int8),
                 days_array=np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int8))
         # ************************************************************************************************************
 
-        self.total_num_of_households = width * height * num_of_households_in_neighbourhood
-
         # [y, x] --> neighbourhood_id
         self.neighbourhood_yx_position_to_id = np.empty((height, width), dtype=np.int8)
-
         #  neighbourhood_id --> [y, x]
         self.neighbourhood_id_to_yx_position = np.empty((height*width, 2), dtype=np.int8)
 
-        # [neighbourhood_id] --> [cashier1, ..., cashierN], N=num od cashiers in given neighbourhood
-        self.cashiers_grouped_by_neighbourhood_id = np.empty((height*width, self.num_of_cashiers_in_neighbourhood),
-                                                             dtype=CashierAgent)
-
-        # [household_id] --> [OrdinaryPearson_1, ..., OrdinaryPearson_N], N=num_of_customers_in_household
-        self.customers_grouped_by_households = np.empty((self.total_num_of_households, num_of_customers_in_household),
-                                                        dtype=OrdinaryPearsonAgent)
-
-        # [household_id] --> [int1, ..., intK], int_m=customer[household_id][m].state, K=num of agents in each household
-        self.agents_state_grouped_by_households = np.empty((self.total_num_of_households,
-                                                           self.num_of_customers_in_household), dtype=np.int8)
-
-        # [neighbourhood_id] --> [neighbour neighbourhood_1_id, ..., neighbour neighbourhood_k_id], k in {0, 1, 2, 3, 4}
-        self.neighbouring_neighbourhoods_grouped_by_neighbourhood_id = \
-            np.zeros((height*width, get_number_of_cell_neighbours(y=height, x=width)))
+        # [neighbourhood_id] --> 0 or 1 or 2
+        self.C_state_by_neigh_id = np.empty(height*width, dtype=np.int8)
+        self.C_incubation_duration_by_neigh_id = np.zeros(height*width, dtype=np.int8)
+        self.C_prodromal_duration_by_neigh_id = np.zeros(height*width, dtype=np.int8)
+        
+        # [household_id] --> [int_1, ..., int_N], N=num_of_customers_in_household, int_m in {-1, 0, 1, 2, 3, 4}
+        self.A_state_by_house_id = np.empty((self.total_households, self.num_of_customers_in_household), dtype=np.int8)
+        
+        self.A_incubation_duration_by_house_id = np.empty_like(self.A_state_by_house_id, dtype=np.int8)
+        self.A_prodromal_duration_by_house_id = np.empty_like(self.A_state_by_house_id, dtype=np.int8)
+        self.A_illness_duration_by_house_id = np.empty_like(self.A_state_by_house_id, dtype=np.int8)
+        
+        self.A_on_shopping_by_house_id = np.zeros_like(self.A_state_by_house_id, dtype=bool)
+        self.A_on_extra_shopping_by_house_id = np.zeros_like(self.A_state_by_house_id, dtype=bool)
+        
+        self.A_go_incubation_because_shopping = np.zeros_like(self.A_state_by_house_id, dtype=bool)
+        self.A_go_incubation_because_housemate = np.zeros_like(self.A_state_by_house_id, dtype=bool)
+        self.C_go_incubation_because_shopping = np.zeros_like(self.C_state_by_neigh_id, dtype=bool)
 
         # COUNTERS ***************************************************************************************************
-        self.ordinary_pearson_number_susceptible = 0
-        self.ordinary_pearson_number_incubation = 0
-        self.ordinary_pearson_number_prodromal = 0
-        self.ordinary_pearson_number_illness = 0
-        self.ordinary_pearson_number_recovery = 0
-        self.ordinary_pearson_number_dead = 0
-
-        self.customers_infected_by_cashier_today = 0
-        self.cashiers_infected_by_customers_today = 0
-
-        self.susceptible_cashiers = 0
-        self.incubation_cashiers = 0
-        self.prodromal_cashiers = 0
         self.replaced_cashiers = 0
 
+        self.ordinary_customers = 0
         self.susceptible_customers = 0
         self.incubation_customers = 0
         self.prodromal_customers = 0
         self.recovery_customers = 0
+        self.infected_customers_by_self_cashier = 0
 
         self.extra_customers = 0
-        self.susceptible_extra_customers = 0
-        self.incubation_extra_customers = 0
-        self.prodromal_extra_customers = 0
-        self.recovery_extra_customers = 0
+        self.extra_susceptible_customers = 0
+        self.extra_incubation_customers = 0
+        self.extra_prodromal_customers = 0
+        self.extra_recovery_customers = 0
+        self.infected_customers_by_extra_cashier = 0
         # ************************************************************************************************************
 
         # AGENTS CREATION ********************************************************************************************
@@ -133,74 +182,90 @@ class DiseaseModel(Model):
         household_id = 0
         for y in range(height):
             for x in range(width):
-                household_number = 0
                 # Create customers for given neighbourhood
                 for _ in range(self.num_of_households_in_neighbourhood):
-                    for household_member in range(self.num_of_customers_in_household):
-                        a = OrdinaryPearsonAgent(unique_id=self.next_id(), model=self,
-                                                 number_in_household=household_member,  household_id=household_id,
-                                                 neighbourhood_id=neighbourhood_id)
-                        self.schedule.add(a)
-                        self.grid.place_agent(agent=a, pos=(x, y))
-                        self.customers_grouped_by_households[household_id][household_member] = a
-                        self.agents_state_grouped_by_households[household_id][household_member] = a.state
+                    for household_member_id in range(self.num_of_customers_in_household):
+                        self.A_state_by_house_id[household_id][household_member_id] = 0
+                        self.A_incubation_duration_by_house_id[household_id][household_member_id] = 0
+                        self.A_prodromal_duration_by_house_id[household_id][household_member_id] = 0
+                        self.A_illness_duration_by_house_id[household_id][household_member_id] = 0
+                        
+                        self.A_on_shopping_by_house_id[household_id][household_member_id] = False
+                        self.A_on_extra_shopping_by_house_id[household_id][household_member_id] = False
+
+                    self.neigh_id_by_house_id[household_id] = neighbourhood_id
                     household_id += 1
-                    household_number += 1
-                # Create cashiers for given neighbourhood
-                for i in range(self.num_of_cashiers_in_neighbourhood):
-                    b = CashierAgent(unique_id=self.next_id(), model=self, neighbourhood_id=neighbourhood_id)
-                    self.schedule.add(b)
-                    self.grid.place_agent(agent=b, pos=(x, y))
-                    self.cashiers_grouped_by_neighbourhood_id[neighbourhood_id][i] = b
+                    
+                # Create cashier for given neighbourhood
+                if neighbourhood_id in self.neigh_id_of_infected_cashiers_at_start:
+                    self.C_state_by_neigh_id[neighbourhood_id] = 2
+                    self.C_prodromal_duration_by_neigh_id[neighbourhood_id] =\
+                        get_prodromal_period(avg_prodromal_period=self.avg_prodromal_period,
+                                             prodromal_period_bins=self.prodromal_period_bins,
+                                             S_prodromal=self.S_prodromal,
+                                             exponents_prodromal=self.exponents_prodromal)
+                else:
+                    self.C_state_by_neigh_id[neighbourhood_id] = 0
+                    
+                b = CashierAgent(unique_id=self.next_id(), model=self, neighbourhood_id=neighbourhood_id)
+                self.schedule.add(b)
+                self.grid.place_agent(agent=b, pos=(x, y))
+                self.cashiers_by_neigh[neighbourhood_id] = b
+                
                 self.neighbourhood_yx_position_to_id[y][x] = neighbourhood_id
                 self.neighbourhood_id_to_yx_position[neighbourhood_id] = np.array([y, x])
                 neighbourhood_id += 1
         # ************************************************************************************************************
 
-
-
-        self.needed_number_of_weeks_to_make_shopping_everywhere = get_number_of_cell_neighbours(y=height, x=width)
-
-        if self.needed_number_of_weeks_to_make_shopping_everywhere:
-
-            # [week][household_id] --> int1, possible ints = {0, 1, 2, 3, 4, 5, 6}
-            self.extra_shopping_days_for_each_household_for_each_week = \
-                create_array_of_shopping_days_for_each_household_for_each_week(
-                    array_to_fill=np.empty((self.max_steps // 7 + 1, self.num_of_households_in_neighbourhood * width *
-                                            height, 1), dtype=np.int8),
-                    days_array=np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int8))
-
-            # [neighbourhood_id] --> [neighbour_neighbourhood_1_id, ..., neighbour_neighbourhood_n_id], n in {0, 1, 2, 3, 4}
-            self.neighbouring_neighbourhoods = find_neighbouring_neighbourhoods(
-                all_cashiers=self.cashiers_grouped_by_neighbourhood_id,
-                neighbourhood_pos_to_id=self.neighbourhood_yx_position_to_id)
-
-            # [neighbourhood_id][num_of_specific_household_in_that_neighbourhood][week] --> neighbour to visit
-            self.order_of_shopping_in_neighbouring_neighbourhoods =\
-                create_order_of_shopping_in_neighbouring_neighbourhoods(
-                    neighbouring_neighbourhoods_grouped_by_neighbourhood_id=self.neighbouring_neighbourhoods,
-                    array_to_fill=np.empty((width*height, self.num_of_households_in_neighbourhood, self.max_steps // 7 + 1),
-                                           dtype=np.int8))
-        else:
-            self.extra_shopping_boolean = False
+        if self.extra_shopping_boolean:
+            if self.number_of_weeks_to_make_shopping_everywhere:
+                # [week][household_id] --> int1, possible ints = {0, 1, 2, 3, 4, 5, 6}
+                self.extra_shopping_days = create_array_of_shopping_days_for_each_household_for_each_week(
+                        array_to_fill=np.empty((self.max_weeks, self.total_households, 1), dtype=np.int8),
+                        days_array=np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int8))
+    
+                # [neighbourhood_id] --> [neighbour_neighbourhood_1_id, ..., neighbour_neighbourhood_n_id], n in {0, 1, 2, 3, 4}
+                self.nearest_neighbourhoods = find_neighbouring_neighbourhoods(
+                    all_cashiers=self.cashiers_by_neigh,
+                    neighbourhood_pos_to_id=self.neighbourhood_yx_position_to_id)
+    
+                # [week][household_id] --> neighbourhood_id to visit
+                array_to_fill = np.empty((self.max_weeks, self.total_households), dtype=np.int8)
+                self.neigh_id_of_extra_shopping_by_week_and_house_id =\
+                    neigh_id_of_extra_shopping(nearest_neighbourhoods_by_neigh_id=self.nearest_neighbourhoods,
+                                               neigh_id_by_house_id=self.neigh_id_by_house_id,
+                                               array_to_fill=array_to_fill)
+            else:
+                self.extra_shopping_boolean = False
 
         self.datacollector = DataCollector(
             model_reporters={"Day": get_day,
+                             
                              "Susceptible people": calculate_ordinary_pearson_number_susceptible,
                              "Incubation people": calculate_ordinary_pearson_number_incubation,
                              "Prodromal people": calculate_ordinary_pearson_number_prodromal,
                              "Illness people": calculate_ordinary_pearson_number_illness,
                              "Dead people": calculate_ordinary_pearson_number_dead,
                              "Recovery people": calculate_ordinary_pearson_number_recovery,
+                             
+                             "Susceptible cashiers": calculate_susceptible_cashiers,
+                             "Incubation cashiers": calculate_incubation_cashiers,
+                             "Prodromal cashiers": calculate_prodromal_cashiers,
+                             "Replaced cashiers": calculate_replaced_cashiers,
+                             
+                             "Ordinary customers": calculate_ordinary_customers,
                              "Susceptible customers":  calculate_susceptible_customers,
                              "Incubation customers":  calculate_incubation_customers,
                              "Prodromal customers":  calculate_prodromal_customers,
                              "Recovery customers":  calculate_recovery_customers,
+                             "Infected by self cashier": calculate_infected_by_self_cashier_today,
+                             
                              "Extra customers": calculate_extra_customers,
-                             "Susceptible cashiers": calculate_susceptible_cashiers,
-                             "Incubation cashiers": calculate_incubation_cashiers,
-                             "Prodromal cashiers": calculate_prodromal_cashiers,
-                             "Infected by cashier": calculate_infected_customers_by_cashier_today})
+                             "Susceptible extra customers": calculate_extra_susceptible_customers,
+                             "Incubation extra customers": calculate_extra_incubation_customers,
+                             "Prodromal extra customers": calculate_extra_prodromal_customers,
+                             "Recovery extra customers": calculate_extra_recovery_customers,
+                             "Infected by extra cashier": calculate_infected_by_extra_cashier_today})
 
     # ----------------------------------------------------------------------------------------------------------------
     def make_shopping_decisions_about_self_neighbourhood(self):
@@ -208,64 +273,229 @@ class DiseaseModel(Model):
         situation = find_out_who_wants_to_do_shopping(
             shopping_days_for_each_household_for_each_week=self.shopping_days_for_each_household_for_each_week,
             day=self.day,
-            agents_state_grouped_by_households=self.agents_state_grouped_by_households,
-            array_to_fill=np.empty((self.total_num_of_households, 2), dtype=np.int8))
+            agents_state_grouped_by_households=self.A_state_by_house_id,
+            array_to_fill=np.empty((self.total_households, 2), dtype=np.int8))
 
         # ordinary shopping
-        for household_id in range(self.total_num_of_households):
-            if situation[household_id][1]:
-                volunteer_pos = situation[household_id][0]
-                self.customers_grouped_by_households[household_id][volunteer_pos].on_shopping = True
+        set_on_shopping_true_depends_on_shopping_situation(total_num_of_households=self.total_households,
+                                                           situation=situation,
+                                                           array_to_fill=self.A_on_shopping_by_house_id)
 
     def make_extra_shopping_decisions_about_neighbouring_neighbourhoods(self):
         situation = find_out_who_wants_to_do_extra_shopping(
-            extra_shopping_days_for_each_household_for_each_week=self.extra_shopping_days_for_each_household_for_each_week,
+            extra_shopping_days=self.extra_shopping_days,
             day=self.day,
-            agents_state_grouped_by_households=self.agents_state_grouped_by_households,
-            array_to_fill=np.empty((self.total_num_of_households, 2), dtype=np.int8))
+            agents_state_grouped_by_households=self.A_state_by_house_id,
+            array_to_fill=np.empty((self.total_households, 2), dtype=np.int8))
 
         # extra shopping
-        for household_id in range(self.total_num_of_households):
-            if situation[household_id][1]:
-                volunteer_pos = situation[household_id][0]
-                self.customers_grouped_by_households[household_id][volunteer_pos].on_extra_shopping = True
+        set_on_extra_shopping_true_depends_on_shopping_situation(total_num_of_households=self.total_households,
+                                                                 situation=situation,
+                                                                 array_to_fill=self.A_on_extra_shopping_by_house_id)
+        
+    def make_ordinary_shopping(self):
+        details = make_ordinary_shopping_core(total_households=self.total_households,
+                                              num_of_customers_in_household=self.num_of_customers_in_household,
+                                              A_on_shopping_by_house_id=self.A_on_shopping_by_house_id,
+                                              A_state_by_house_id=self.A_state_by_house_id,
+                                              C_state_by_neigh_id=self.C_state_by_neigh_id,
+                                              neigh_id_by_house_id=self.neigh_id_by_house_id,
+                                              beta=self.beta,
+                                              A_go_incubation_because_shopping=self.A_go_incubation_because_shopping,
+                                              C_go_incubation_because_shopping=self.C_go_incubation_because_shopping)
 
-    def update_agents_state(self):
-        for cashier in self.cashiers_grouped_by_neighbourhood_id.flat:
-            cashier.update_state()
+        # customers, susceptible_customers, incubation_customers, prodromal_customers, recovery_customers, infected_by_self_cashier
+        self.ordinary_customers = details[0]
+        self.susceptible_customers = details[1]
+        self.incubation_customers = details[2]
+        self.prodromal_customers = details[3]
+        self.recovery_customers = details[4]
+        self.infected_customers_by_self_cashier = details[5]
+    
+    def make_extra_shopping(self):
+        # print(self.neigh_id_of_extra_shopping_by_week_and_house_id)
+        
+        details = make_extra_shopping_core(total_households=self.total_households,
+                                           num_of_customers_in_household=self.num_of_customers_in_household,
+                                           A_on_extra_shopping_by_house_id=self.A_on_extra_shopping_by_house_id,
+                                           A_state_by_house_id=self.A_state_by_house_id,
+                                           C_state_by_neigh_id=self.C_state_by_neigh_id,
+                                           neigh_id_by_house_id=self.neigh_id_by_house_id,
+                                           beta=self.beta,
+                                           A_go_incubation_because_shopping=self.A_go_incubation_because_shopping,
+                                           C_go_incubation_because_shopping=self.C_go_incubation_because_shopping,
+                                           neigh_id_of_extra_shopping_by_week_and_house_id=self.neigh_id_of_extra_shopping_by_week_and_house_id,
+                                           day=self.day)
 
-        for ordinary_agent in self.customers_grouped_by_households.flat:
-            ordinary_agent.update_state()
-    # -----------------------------------------------------------------------------------------------------------------
-
-    def step(self):
-        self.day += 1
-
-        i = 0
-        for ordinary_agent in self.customers_grouped_by_households.flat:
-            if (ordinary_agent.asPD > 0 or ordinary_agent.asSC > 0) and ordinary_agent.did_shopping_today:
-                i += 1
-        # print()
-        # print(f"DAY: {self.day-1}: {i}")
-        for ordinary_agent in self.customers_grouped_by_households.flat:
-            if (ordinary_agent.asPD > 0 or ordinary_agent.asSC > 0) and ordinary_agent.did_shopping_today:
-                # print(f"{ordinary_agent.unique_id}, {ordinary_agent.asSC}, {ordinary_agent.asPD}, "
-                #       f"{ordinary_agent.days}")
-                ordinary_agent.did_shopping_today = False
-
+        self.extra_customers = details[0]
+        self.extra_susceptible_customers = details[1]
+        self.extra_incubation_customers = details[2]
+        self.extra_prodromal_customers = details[3]
+        self.extra_recovery_customers = details[4]
+        self.infected_customers_by_extra_cashier = details[5]
+        
+    def make_shopping(self):
+        self.make_shopping_decisions_about_self_neighbourhood()
+        self.make_ordinary_shopping()
+        if self.extra_shopping_boolean:
+            self.make_extra_shopping_decisions_about_neighbouring_neighbourhoods()
+            self.make_extra_shopping()
+            
+    def try_to_infect_housemates(self):
+        try_to_infect_housemates_core(total_households=self.total_households,
+                                      num_of_customers_in_household=self.num_of_customers_in_household,
+                                      suspicious_households=self.suspicious_households,
+                                      A_state_by_house_id=self.A_state_by_house_id,
+                                      A_go_incubation_because_housemate=self.A_go_incubation_because_housemate)
+            
+    def set_shopping_stats_to_zero(self):
         self.susceptible_customers = 0
         self.incubation_customers = 0
         self.prodromal_customers = 0
         self.recovery_customers = 0
-        self.customers_infected_by_cashier_today = 0
-        self.cashiers_infected_by_customers_today = 0
-        self.extra_customers = 0
+        self.infected_customers_by_self_cashier = 0
 
-        self.make_shopping_decisions_about_self_neighbourhood()
-        if self.extra_shopping_boolean:
-            self.make_extra_shopping_decisions_about_neighbouring_neighbourhoods()
+        self.extra_customers = 0
+        self.extra_susceptible_customers = 0
+        self.extra_incubation_customers = 0
+        self.extra_prodromal_customers = 0
+        self.extra_recovery_customers = 0
+        self.infected_customers_by_extra_cashier = 0
+
+    def update_A_states(self):
+        update_A_states_core(total_households=self.total_households,
+                             num_of_customers_in_household=self.num_of_customers_in_household,
+                             A_state_by_house_id=self.A_state_by_house_id,
+                             suspicious_households=self.suspicious_households,
+                             A_go_incubation_because_shopping=self.A_go_incubation_because_shopping,
+                             A_go_incubation_because_housemate=self.A_go_incubation_because_housemate,
+                             A_incubation_duration_by_house_id=self.A_incubation_duration_by_house_id,
+                             A_prodromal_duration_by_house_id=self.A_prodromal_duration_by_house_id,
+                             A_illness_duration_by_house_id=self.A_illness_duration_by_house_id,
+                             mortality=self.mortality,
+                             prob_of_survive_one_day=self.prob_of_survive_one_day,
+                             die_at_once=self.die_at_once,
+                             avg_incubation_period=self.avg_incubation_period,
+                             incubation_period_bins=self.incubation_period_bins,
+                             S_incubation=self.S_incubation,
+                             exponents_incubation=self.exponents_incubation,
+                             avg_prodromal_period=self.avg_prodromal_period,
+                             prodromal_period_bins=self.prodromal_period_bins,
+                             S_prodromal=self.S_prodromal,
+                             exponents_prodromal=self.exponents_prodromal,
+                             avg_illness_period=self.avg_illness_period,
+                             illness_period_bins=self.illness_period_bins,
+                             S_illness=self.S_illness,
+                             exponents_illness=self.exponents_illness)
+                        
+    def update_C_states(self):
+        replaced_today = update_C_states_core(total_neighbourhoods=self.total_neighbourhoods,
+                                              C_state_by_neigh_id=self.C_state_by_neigh_id,
+                                              C_go_incubation_because_shopping=self.C_go_incubation_because_shopping,
+                                              C_incubation_duration_by_neigh_id=self.C_incubation_duration_by_neigh_id,
+                                              C_prodromal_duration_by_neigh_id=self.C_prodromal_duration_by_neigh_id,
+                                              avg_incubation_period=self.avg_incubation_period,
+                                              incubation_period_bins=self.incubation_period_bins,
+                                              S_incubation=self.S_incubation,
+                                              exponents_incubation=self.exponents_incubation,
+                                              avg_prodromal_period=self.avg_prodromal_period,
+                                              prodromal_period_bins=self.prodromal_period_bins,
+                                              S_prodromal=self.S_prodromal,
+                                              exponents_prodromal=self.exponents_prodromal)
+        
+        self.replaced_cashiers += replaced_today
+    
+    def update_agents_state(self):
+        self.update_A_states()
+        self.update_C_states()
+        
+    def release_memory(self):
+        self.num_of_households_in_neighbourhood = None
+        self.num_of_customers_in_household = None
+        self.avg_incubation_period = None
+        self.incubation_period_bins = None
+        self.avg_prodromal_period = None
+        self.prodromal_period_bins = None
+        self.avg_illness_period = None
+        self.illness_period_bins = None
+        self.beta = None
+        self.mortality = None
+        self.num_of_infected_cashiers_at_start = None
+        self.die_at_once = None
+        self.prob_of_survive_one_day = None
+        self.extra_shopping_boolean = None
+        self.infect_housemates_boolean = None
+        self.max_steps = None
+        self.current_id = None
+        self.day = None
+
+        self.total_neighbourhoods = None
+        self.total_households = None
+        self.number_of_weeks_to_make_shopping_everywhere = None
+        self.cashiers_by_neigh = None
+        self.neigh_id_by_house_id = None
+        self.suspicious_households = None
+        self.neigh_id_of_infected_cashiers_at_start = None
+
+        self.S_incubation = None
+        self.exponents_incubation = None
+        self.S_prodromal = None
+        self.exponents_prodromal = None
+        self.S_illness = None
+        self.exponents_illness = None
+
+        self.grid = None
+        self.schedule = None
+
+        self.shopping_days_for_each_household_for_each_week = None
+        self.neighbourhood_yx_position_to_id = None
+        self.neighbourhood_id_to_yx_position = None
+
+        self.C_state_by_neigh_id = None
+        self.C_incubation_duration_by_neigh_id = None
+        self.C_prodromal_duration_by_neigh_id = None
+
+        self.A_state_by_house_id = None
+        self.A_incubation_duration_by_house_id = None
+        self.A_prodromal_duration_by_house_id = None
+        self.A_illness_duration_by_house_id = None
+        self.A_on_shopping_by_house_id = None
+        self.A_on_extra_shopping_by_house_id = None
+        self.A_go_incubation_because_shopping = None
+        self.A_go_incubation_because_housemate = None
+        self.C_go_incubation_because_shopping = None
+
+        self.replaced_cashiers = None
+        self.ordinary_customers = None
+        self.susceptible_customers = None
+        self.incubation_customers = None
+        self.prodromal_customers = None
+        self.recovery_customers = None
+        self.infected_customers_by_self_cashier = None
+        self.extra_customers = None
+        self.extra_susceptible_customers = None
+        self.extra_incubation_customers = None
+        self.extra_prodromal_customers = None
+        self.extra_recovery_customers = None
+        self.infected_customers_by_extra_cashier = None
+
+    def step(self):
+        self.day += 1
+        self.set_shopping_stats_to_zero()
+        
+        self.make_shopping()
 
         self.schedule.step()
-
         self.datacollector.collect(model=self)
-        self.update_agents_state()
+        if self.day == self.max_steps:
+            self.release_memory()
+            self.running = False
+        else:
+            if self.infect_housemates_boolean:
+                self.try_to_infect_housemates()
+            self.update_agents_state()
+        
+        
+        
+        
+        

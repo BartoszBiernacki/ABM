@@ -50,7 +50,7 @@ def find_neighbouring_neighbourhoods(all_cashiers, neighbourhood_pos_to_id):
             possible_steps_for_specific_cell_as_neighbourhoods_id.append(neighbourhood_pos_to_id[possible_step_yx])
         possible_steps_as_neighbourhood_ids.append(possible_steps_for_specific_cell_as_neighbourhoods_id)
 
-    result = np.array(possible_steps_as_neighbourhood_ids)
+    result = np.array(possible_steps_as_neighbourhood_ids, dtype=np.int16)
 
     return result
 
@@ -64,30 +64,48 @@ def neigh_id_of_extra_shopping(nearest_neighbourhoods_by_neigh_id, neigh_id_by_h
 
     if num_of_nearest_neighbourhoods > 0:  # do sth if there is at least one neighbour
     
-        covered_cycles = 0
+        cycle_length = num_of_nearest_neighbourhoods
         weeks_to_cover = max_weeks
+        tot_cycles = max_weeks // num_of_nearest_neighbourhoods + 1
+        for cycle in range(tot_cycles):
+            for house_id in range(total_households):
+                neigh_id = neigh_id_by_house_id[house_id]
+                np.random.shuffle(nearest_neighbourhoods_by_neigh_id[neigh_id])
+                
+                for week in range(cycle_length):
+                    if cycle*cycle_length + week >= weeks_to_cover:
+                        break
+                    else:
+                        array_to_fill[cycle*cycle_length + week][house_id] =\
+                            nearest_neighbourhoods_by_neigh_id[neigh_id][week]
         
-        while True:
-            for i in range(min(weeks_to_cover, num_of_nearest_neighbourhoods)):
-                for house_id in range(total_households):
-                    neigh_id = neigh_id_by_house_id[house_id]
-                    shuffled_neighbours = np.random.permutation(nearest_neighbourhoods_by_neigh_id[neigh_id])
-                    array_to_fill[covered_cycles * num_of_nearest_neighbourhoods + i][house_id] = shuffled_neighbours[i]
-                    
-            covered_cycles += 1
-            weeks_to_cover -= num_of_nearest_neighbourhoods
-        
-            if weeks_to_cover <= 0:
-                return array_to_fill
-
-
-@njit(cache=True)
-def create_array_of_shopping_days_for_each_household_for_each_week(array_to_fill, days_array):
+        return array_to_fill
+   
+   
+@njit("i1[:,:,:](i1[:,:,:])", cache=True)
+def create_array_of_shopping_days_for_each_household_for_each_week(array_to_fill):
     total_num_of_weeks, total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
     for week in range(total_num_of_weeks):
         for household in range(total_num_of_households):
-            random.shuffle(days_array)
-            array_to_fill[week][household] = days_array[: num_of_shopping_days_in_week]
+            r1 = random.randint(0, 6)
+            r2 = random.randint(0, 6)
+            
+            while r1 == r2:
+                r2 = random.randint(0, 6)
+            
+            array_to_fill[week][household][0] = r1
+            array_to_fill[week][household][1] = r2
+    
+    return array_to_fill
+
+
+@njit("i1[:,:,:](i1[:,:,:])", cache=True)
+def create_array_of_extra_shopping_days_for_each_household_for_each_week(array_to_fill):
+    total_num_of_weeks, total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
+    for week in range(total_num_of_weeks):
+        for household in range(total_num_of_households):
+            array_to_fill[week][household][0] = random.randint(0, 6)
+    
     return array_to_fill
 
 
@@ -95,25 +113,41 @@ def create_array_of_shopping_days_for_each_household_for_each_week(array_to_fill
 def find_out_who_wants_to_do_shopping(shopping_days_for_each_household_for_each_week,
                                       day,
                                       agents_state_grouped_by_households,
+                                      A_ignore_quarantine_by_house_id,
                                       array_to_fill):
-
-    total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
-
+    
+    total_num_of_households, household_size = agents_state_grouped_by_households.shape
     day_mod_7 = day % 7
     week = day // 7
     # return[household_id][0 or 1], if 0 --> volunteer_pos, if 1 --> volunteer_availability
     for household_id in range(total_num_of_households):
         if day_mod_7 in shopping_days_for_each_household_for_each_week[week][household_id]:
-            volunteer_pos = np.argmax(agents_state_grouped_by_households[household_id] <= 2)
-            array_to_fill[household_id][0] = volunteer_pos
+            
+            vol_pos1 = None
+            vol_pos2 = None
+            for house_member in range(household_size):
+                
+                if agents_state_grouped_by_households[household_id][house_member] <= 2:
+                    array_to_fill[household_id][0] = house_member
+                    vol_pos1 = house_member
+                    array_to_fill[household_id][1] = 1
+                elif agents_state_grouped_by_households[household_id][house_member] == 3 and \
+                        A_ignore_quarantine_by_house_id[household_id][house_member]:
+                    vol_pos2 = house_member
 
-            if agents_state_grouped_by_households[household_id][volunteer_pos] <= 2:
+            if vol_pos1 is not None and vol_pos2 is not None:
+                if np.random.rand() <= 0.5:
+                    array_to_fill[household_id][0] = vol_pos1
+                else:
+                    array_to_fill[household_id][0] = vol_pos2
                 array_to_fill[household_id][1] = 1
-            else:
-                array_to_fill[household_id][1] = 0
-        else:
-            array_to_fill[household_id][1] = 0
-
+            elif vol_pos1 is not None:
+                array_to_fill[household_id][0] = vol_pos1
+                array_to_fill[household_id][1] = 1
+            elif vol_pos2 is not None:
+                array_to_fill[household_id][0] = vol_pos2
+                array_to_fill[household_id][1] = 1
+            
     return array_to_fill
 
 
@@ -126,38 +160,56 @@ def set_on_shopping_true_depends_on_shopping_situation(total_num_of_households,
         if situation[household_id][1]:
             volunteer_pos = situation[household_id][0]
             array_to_fill[household_id][volunteer_pos] = True
-       
-            
-@njit(cache=True)
-def set_on_extra_shopping_true_depends_on_shopping_situation(total_num_of_households, situation, array_to_fill):
-    for household_id in range(total_num_of_households):
-        if situation[household_id][1]:
-            volunteer_pos = situation[household_id][0]
-            array_to_fill[household_id][volunteer_pos] = True
 
 
 @njit(cache=True)
 def find_out_who_wants_to_do_extra_shopping(extra_shopping_days,
                                             day,
                                             agents_state_grouped_by_households,
+                                            A_ignore_quarantine_by_house_id,
                                             array_to_fill):
-
-    total_num_of_households, num_of_shopping_days_in_week = array_to_fill.shape
-
+    
+    total_num_of_households, household_size = agents_state_grouped_by_households.shape
     day_mod_7 = day % 7
     week = day // 7
     # return[household_id][0 or 1], if 0 --> volunteer_pos, if 1 --> volunteer_availability
     for household_id in range(total_num_of_households):
         if day_mod_7 in extra_shopping_days[week][household_id]:
-            volunteer_pos = np.argmax(agents_state_grouped_by_households[household_id] <= 2)
-            array_to_fill[household_id][0] = volunteer_pos
-
-            if agents_state_grouped_by_households[household_id][volunteer_pos] <= 2:
+    
+            vol_pos1 = None
+            vol_pos2 = None
+            for house_member in range(household_size):
+        
+                if agents_state_grouped_by_households[household_id][house_member] <= 2:
+                    array_to_fill[household_id][0] = house_member
+                    vol_pos1 = house_member
+                    array_to_fill[household_id][1] = 1
+                elif agents_state_grouped_by_households[household_id][house_member] == 3 and \
+                        A_ignore_quarantine_by_house_id[household_id][house_member]:
+                    vol_pos2 = house_member
+    
+            if vol_pos1 is not None and vol_pos2 is not None:
+                if np.random.rand() <= 0.5:
+                    array_to_fill[household_id][0] = vol_pos1
+                else:
+                    array_to_fill[household_id][0] = vol_pos2
                 array_to_fill[household_id][1] = 1
-        else:
-            array_to_fill[household_id][1] = 0
-
+            elif vol_pos1 is not None:
+                array_to_fill[household_id][0] = vol_pos1
+                array_to_fill[household_id][1] = 1
+            elif vol_pos2 is not None:
+                array_to_fill[household_id][0] = vol_pos2
+                array_to_fill[household_id][1] = 1
+    
     return array_to_fill
+
+
+@njit(cache=True)
+def set_on_extra_shopping_true_depends_on_shopping_situation(total_num_of_households, situation, array_to_fill):
+    for household_id in range(total_num_of_households):
+        if situation[household_id][1]:
+            volunteer_pos = situation[household_id][0]
+            array_to_fill[household_id][volunteer_pos] = True
 
 
 @njit(cache=True)
@@ -175,12 +227,14 @@ def make_ordinary_shopping_core(total_households,
     susceptible_customers = 0
     incubation_customers = 0
     prodromal_customers = 0
+    illness_customers = 0
     infected_by_self_cashier = 0
     
     for house_id in range(total_households):
         for h_member in range(num_of_customers_in_household):
             if A_on_shopping_by_house_id[house_id][h_member]:
                 customers += 1
+                
                 if A_state_by_house_id[house_id][h_member] == -1:
                     recovery_customers += 1
                     A_on_shopping_by_house_id[house_id][h_member] = False
@@ -204,9 +258,21 @@ def make_ordinary_shopping_core(total_households,
                             C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
                     A_on_shopping_by_house_id[house_id][h_member] = False
                     
-    if susceptible_customers + incubation_customers + prodromal_customers + recovery_customers != customers:
-        raise ValueError("Customers in different stages must add up to customers!")
-    return customers, susceptible_customers, incubation_customers, prodromal_customers, recovery_customers, infected_by_self_cashier
+                elif A_state_by_house_id[house_id][h_member] == 3:
+                    illness_customers += 1
+                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
+                        if np.random.rand() <= beta:
+                            C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
+                    A_on_shopping_by_house_id[house_id][h_member] = False
+                    
+    if susceptible_customers + incubation_customers + prodromal_customers + illness_customers + recovery_customers != \
+            customers:
+        raise ValueError("Customers in different stages must add up to all customers!")
+
+    result = (customers, susceptible_customers, incubation_customers, prodromal_customers, illness_customers,
+              recovery_customers, infected_by_self_cashier)
+    
+    return result
 
 
 @njit(cache=True)
@@ -226,6 +292,7 @@ def make_extra_shopping_core(total_households,
     extra_susceptible_customers = 0
     extra_incubation_customers = 0
     extra_prodromal_customers = 0
+    extra_illness_customers = 0
     infected_by_extra_cashier = 0
     
     for house_id in range(total_households):
@@ -255,9 +322,17 @@ def make_extra_shopping_core(total_households,
                             C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
                             C_go_incubation_because_shopping[C_neigh_id] = True
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
+                    
+                elif A_state_by_house_id[house_id][h_member] == 3:
+                    extra_illness_customers += 1
+                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
+                        if np.random.rand() <= beta:
+                            C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
+                            C_go_incubation_because_shopping[C_neigh_id] = True
+                    A_on_extra_shopping_by_house_id[house_id][h_member] = False
 
     return extra_customers, extra_susceptible_customers, extra_incubation_customers, extra_prodromal_customers, \
-        extra_recovery_customers, infected_by_extra_cashier
+        extra_illness_customers, extra_recovery_customers, infected_by_extra_cashier
 
 
 @njit(cache=True)
@@ -285,6 +360,7 @@ def update_A_states_core(total_households,
                          A_prodromal_duration_by_house_id,
                          A_illness_duration_by_house_id,
                          mortality,
+                         A_ignore_quarantine_by_house_id,
                          prob_of_survive_one_day,
                          die_at_once,
                          avg_incubation_period,
@@ -340,22 +416,29 @@ def update_A_states_core(total_households,
                 
                 if die_at_once:
                     if A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                        if np.random.rand() <= mortality:
-                            A_state_by_house_id[house_id][house_member] = 4
+                        if not A_ignore_quarantine_by_house_id[house_id][house_member]:
+                            if np.random.rand() <= mortality:
+                                A_state_by_house_id[house_id][house_member] = 4
+                            else:
+                                A_state_by_house_id[house_id][house_member] = -1
                         else:
                             A_state_by_house_id[house_id][house_member] = -1
                 else:
-                    if np.random.rand() > prob_of_survive_one_day:  # if die today:
-                        A_illness_duration_by_house_id[house_id][house_member] = 0
-                        A_state_by_house_id[house_id][house_member] = 4
-                        
-                    elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                        A_state_by_house_id[house_id][house_member] = -1
+                    if not A_ignore_quarantine_by_house_id[house_id][house_member]:
+                        if np.random.rand() > prob_of_survive_one_day:  # if die today:
+                            A_illness_duration_by_house_id[house_id][house_member] = 0
+                            A_state_by_house_id[house_id][house_member] = 4
+                            
+                        elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
+                            A_state_by_house_id[house_id][house_member] = -1
+                    else:
+                        if A_illness_duration_by_house_id[house_id][house_member] <= 0:
+                            A_state_by_house_id[house_id][house_member] = -1
                 
     A_go_incubation_because_shopping.fill(False)
     A_go_incubation_because_housemate.fill(False)
     
-                        
+    
 @njit(cache=True)
 def update_C_states_core(total_neighbourhoods,
                          C_state_by_neigh_id,

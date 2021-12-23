@@ -19,6 +19,14 @@ def calculate_ordinary_pearson_number_illness(model):
     return int(np.sum(model.A_state_by_house_id == 3))
 
 
+def calculate_ordinary_pearson_number_illness_visible(model):
+    return int(np.sum(model.A_state_by_house_id == 3 * np.logical_not(model.A_ignore_quarantine_by_house_id)))
+
+
+def calculate_ordinary_pearson_number_illness_invisible(model):
+    return int(np.sum(model.A_state_by_house_id == 3 * model.A_ignore_quarantine_by_house_id))
+
+
 def calculate_ordinary_pearson_number_dead(model):
     return int(np.sum(model.A_state_by_house_id == 4))
 
@@ -62,6 +70,10 @@ def calculate_prodromal_customers(model):
     return model.prodromal_customers
 
 
+def calculate_illness_customers(model):
+    return model.illness_customers
+
+
 def calculate_recovery_customers(model):
     return model.recovery_customers
 
@@ -86,6 +98,10 @@ def calculate_extra_incubation_customers(model):
 
 def calculate_extra_prodromal_customers(model):
     return model.extra_prodromal_customers
+
+
+def calculate_extra_illness_customers(model):
+    return model.extra_illness_customers
 
 
 def calculate_extra_recovery_customers(model):

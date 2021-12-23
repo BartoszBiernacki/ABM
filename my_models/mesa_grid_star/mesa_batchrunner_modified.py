@@ -186,8 +186,8 @@ class FixedBatchRunner:
                 self.datacollector_agent_reporters[
                     model_key
                 ] = results.get_agent_vars_dataframe()
-
         return (
+            
             getattr(self, "model_vars", None),
             getattr(self, "agent_vars", None),
             getattr(self, "datacollector_model_reporters", None),
@@ -414,6 +414,7 @@ class BatchRunner(FixedBatchRunner):
 class BatchRunnerMP(BatchRunner):
     """Child class of BatchRunner, extended with multiprocessing support."""
 
+    # ignore
     def __init__(self, model_cls, nr_processes=None, **kwargs):
         """Create a new BatchRunnerMP for a given model with the given
         parameters.
@@ -433,9 +434,9 @@ class BatchRunnerMP(BatchRunner):
             self.processes = nr_processes
 
         super().__init__(model_cls, **kwargs)
-        # maxtasksperchild gives balance between RAM consumption and computation speed. Bigger value --> faster
         self.pool = Pool(self.processes, maxtasksperchild=200)
 
+    # ignore
     def _make_model_args_mp(self):
         """Prepare all combinations of parameter values for `run_all`
         Due to multiprocessing requirements of @StaticMethod takes different input, hence the similar function
@@ -469,6 +470,7 @@ class BatchRunnerMP(BatchRunner):
 
     # *********************************************************************************************************************
 
+    # return param_values, model, can be ignored
     @staticmethod
     def _run_wrappermp(iter_args):
         """
@@ -503,72 +505,31 @@ class BatchRunnerMP(BatchRunner):
 
         return param_values, model
 
-    def _result_prep_mp(self, results):
-        """
-        Helper Function
-        :param results: Takes results dictionary from Processpool and single processor debug run and fixes format to
-        make compatible with BatchRunner Output
-        :updates model_vars and agents_vars so consistent across all batchrunner
-        """
-        # Take results and convert to dictionary so dataframe can be called
-        for model_key, model in results.items():
-            if self.model_reporters:
-                self.model_vars[model_key] = self.collect_model_vars(model)
-            if self.agent_reporters:
-                agent_vars = self.collect_agent_vars(model)
-                for agent_id, reports in agent_vars.items():
-                    agent_key = model_key + (agent_id,)
-                    self.agent_vars[agent_key] = reports
-            if hasattr(model, "datacollector"):
-                if model.datacollector.model_reporters is not None:
-                    self.datacollector_model_reporters[
-                        model_key
-                    ] = model.datacollector.get_model_vars_dataframe()
-                if model.datacollector.agent_reporters is not None:
-                    self.datacollector_agent_reporters[
-                        model_key
-                    ] = model.datacollector.get_agent_vars_dataframe()
-
-        # Make results consistent
-        if len(self.datacollector_model_reporters.keys()) == 0:
-            self.datacollector_model_reporters = None
-        if len(self.datacollector_agent_reporters.keys()) == 0:
-            self.datacollector_agent_reporters = None
-
     def run_all(self):
         """
-        Run the model at all parameter combinations and store results,
+        Run the model at all parameter combinations and save results,
         overrides run_all from BatchRunner.
         """
+        save_dir = 'TMP_SAVE/'
+        from pathlib import Path
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
 
         run_iter_args, total_iterations = self._make_model_args_mp()
         # register the process pool and init a queue
-        # store results in ordered dictionary
-        results = {}
 
         if self.processes > 1:
             with tqdm(total_iterations, disable=not self.display_progress) as pbar:
-                for params, model in self.pool.imap_unordered(
-                    self._run_wrappermp, run_iter_args
-                ):
-                    results[params] = model
+                for params, model in self.pool.imap_unordered(self._run_wrappermp, run_iter_args):
+                    
+                    fname = save_dir + str(params) + '.pkl'
+                    df = model.datacollector.get_model_vars_dataframe()
+                    df.to_pickle(fname)
+
+                    model = None
+                    params = None
+                    df = None
+                    
                     pbar.update()
-
-                self._result_prep_mp(results)
-        # For debugging model due to difficulty of getting errors during multiprocessing
-        else:
-            for run in run_iter_args:
-                params, model_data = self._run_wrappermp(run)
-                results[params] = model_data
-
-            self._result_prep_mp(results)
 
         # Close multi-processing
         self.pool.close()
-
-        return (
-            getattr(self, "model_vars", None),
-            getattr(self, "agent_vars", None),
-            getattr(self, "datacollector_model_reporters", None),
-            getattr(self, "datacollector_agent_reporters", None),
-        )

@@ -59,6 +59,8 @@ illness_period_bins_slider = UserSettableParameter('slider', "Num of possible il
 
 mortality_slider = UserSettableParameter('slider', "Mortality", value=0.1, min_value=0.0, max_value=1, step=0.01)
 
+visibility_slider = UserSettableParameter('slider', "Visibility", value=0.6, min_value=0.0, max_value=1, step=0.01)
+
 die_at_once_switch = UserSettableParameter('checkbox', 'Die at once', value=False)
 
 extra_shopping_boolean_switch = UserSettableParameter('checkbox', 'allow to extra shopping', value=True)
@@ -100,36 +102,42 @@ cashier_influence_graph = ChartModule(
     data_collector_name='datacollector')
 
 
-server = ModularServer(model_cls=DiseaseModel,
-                       visualization_elements=[grid,
-                                               exposed_population_graph,
-                                               extra_customers_graph,
-                                               total_population_situation_graph,
-                                               total_customers_situation_graph,
-                                               total_cashiers_situation_graph,
-                                               cashier_influence_graph
-                                               ],
-                       name="Disease spread model", model_params=
-                       {"height": height_slider,
-                        "width": width_slider,
-                        "num_of_households_in_neighbourhood": number_of_households_slider,
-                        "num_of_customers_in_household": avg_num_of_customers_in_household_slider,
-                        "beta": beta_slider,
-                        "avg_incubation_period": avg_incubation_period_slider,
-                        "incubation_period_bins": incubation_period_bins_slider,
-                        "avg_prodromal_period": avg_prodromal_period_slider,
-                        "prodromal_period_bins": prodromal_period_bins_slider,
-                        "avg_illness_period": avg_illness_period_slider,
-                        "illness_period_bins": illness_period_bins_slider,
-                        "num_of_infected_cashiers_at_start": num_of_infected_cashiers_at_start_slider,
-                        "mortality": mortality_slider,
-                        "die_at_once": die_at_once_switch,
-                        "extra_shopping_boolean": extra_shopping_boolean_switch,
-                        "infect_housemates_boolean": infect_housemates_boolean_switch,
-                        "max_steps": 1000
-                        })
-
-
 def run_simulation_in_browser():
+    server = ModularServer(model_cls=DiseaseModel,
+                           visualization_elements=[grid,
+                                                   exposed_population_graph,
+                                                   extra_customers_graph,
+                                                   total_population_situation_graph,
+                                                   total_customers_situation_graph,
+                                                   total_cashiers_situation_graph,
+                                                   cashier_influence_graph
+                                                   ],
+                           name="Disease spread model", model_params=
+                           {"width": width_slider,
+                            "height": height_slider,
+                            "grid_size": (1, 1),  # will be ignored
+    
+                            "N": number_of_households_slider,
+                            "num_of_customers_in_household": avg_num_of_customers_in_household_slider,
+    
+                            "beta": beta_slider,
+                            "mortality": mortality_slider,
+                            "beta_mortality_pair": (0.05, 1 / 100),  # will be ignored
+                            "visibility": visibility_slider,
+    
+                            "avg_incubation_period": avg_incubation_period_slider,
+                            "incubation_period_bins": incubation_period_bins_slider,
+                            "avg_prodromal_period": avg_prodromal_period_slider,
+                            "prodromal_period_bins": prodromal_period_bins_slider,
+                            "avg_illness_period": avg_illness_period_slider,
+                            "illness_period_bins": illness_period_bins_slider,
+                            "num_of_infected_cashiers_at_start": num_of_infected_cashiers_at_start_slider,
+    
+                            "die_at_once": die_at_once_switch,
+                            "extra_shopping_boolean": extra_shopping_boolean_switch,
+                            "infect_housemates_boolean": infect_housemates_boolean_switch,
+                            "max_steps": 1000,
+                            })
+    
     server.port = 8521  # default
     server.launch()

@@ -65,6 +65,7 @@ class DiseaseModel(Model):
                  N,
                  customers_in_household,
                  beta_mortality_pair,
+                 beta_changes,
                  visibility,
                  
                  avg_incubation_period, incubation_period_bins,
@@ -103,6 +104,8 @@ class DiseaseModel(Model):
         else:
             self.beta = beta_mortality_pair[0]
             self.mortality = beta_mortality_pair[1]
+        self.beta_0 = self.beta
+        self.beta_changes = beta_changes
         self.visibility = visibility
         
         self.infected_cashiers_at_start = infected_cashiers_at_start
@@ -535,6 +538,10 @@ class DiseaseModel(Model):
 
         self.schedule.step()
         self.datacollector.collect(model=self)
+
+        if self.day in self.beta_changes[0]:
+            idx = self.beta_changes[0].index(self.day)
+            self.beta = self.beta_0 * self.beta_changes[1][idx]
         
         if self.day + 1 == self.max_steps:
             self.release_memory()

@@ -382,3 +382,8 @@ def group_fnames_standard_by_mortality_visibility_beta(directory):
     
     return result
 # *****************************************************************************************************************
+
+
+def rename_duplicates_in_df_index_column(df, suffix='-duplicate-'):
+    appendents = (suffix + df.groupby(level=0).cumcount().astype(str).replace('0', '')).replace(suffix, '')
+    return df.set_index(df.index + appendents)

@@ -1,24 +1,44 @@
 import cProfile
 import itertools
 import pstats
-
 import numpy as np
 
 from my_math_utils import calc_exec_time
 from my_model_data_analysis import run_and_save_simulations
+from data_visualisation import plot_1D_death_toll_dynamic_real_and_beta_sweep, \
+    plot_1D_recovered_dynamic_real_and_beta_sweep, plot_stochastic_1D_death_toll_dynamic, \
+    plot_auto_fit_result, show_real_death_toll_voivodeship_shifted_by_hand
+from data_visualisation import plot_all_possible_plots
 from disease_server import run_simulation_in_browser
 from data_visualisation import reproduce_plot_by_website
+from my_models.mesa_grid_star.text_processing import all_fnames_from_dir
+from real_data import RealData
+from avg_results import remove_tmp_results, get_single_results
+from config import Config
 
-
-grid_size = (20, 20)
-N = 1000
 customers_in_household = 3
-max_steps = 500
-iterations = 18
-beta_sweep = (0.02, 0.07, 11)
-mortality_sweep = (0.5/100, 1.5/100, 3)
-visibility_sweep = (0.2, 1., 17)
-run = False
+real_data_obj = RealData(customers_in_household=customers_in_household)
+real_general_data = real_data_obj.get_real_general_data()
+real_death_toll = real_data_obj.get_real_death_toll()
+real_infected_toll = real_data_obj.get_real_infected_toll()
+
+
+voivodeship = Config.voivodeship
+N = real_general_data.loc[voivodeship, 'N MODEL']
+grid_side_length = real_general_data.loc[voivodeship, 'grid side MODEL']
+grid_size = (grid_side_length, grid_side_length)
+max_steps = 250
+
+infected_cashiers_at_start = grid_side_length
+
+iterations = 5
+beta_sweep = (0.02625, 0.7, 1)
+beta_changes = ((1000, 2000), (1., 1.))
+mortality_sweep = (2/100, 3./100, 1)
+visibility_sweep = (0.65, 1., 1)
+run = True
+plot_all = True
+
 
 if __name__ == '__main__':
     calc_exec_time(grid_size=grid_size, N=N, max_steps=max_steps, iterations=iterations,
@@ -65,11 +85,12 @@ if __name__ == '__main__':
 
     if run:
         with cProfile.Profile() as pr:
-            run_and_save_simulations(
+            directory = run_and_save_simulations(
                 fixed_params={
                     "grid_size": grid_size,
                     "N": N,
                     "customers_in_household": customers_in_household,
+                    "beta_changes": beta_changes,
     
                     "avg_incubation_period": 5,
                     "incubation_period_bins": 3,
@@ -79,7 +100,7 @@ if __name__ == '__main__':
                     "illness_period_bins": 1,
     
                     "die_at_once": False,
-                    "infected_cashiers_at_start": grid_size[0]*grid_size[1],
+                    "infected_cashiers_at_start": infected_cashiers_at_start,
                     "infect_housemates_boolean": False,
                     "extra_shopping_boolean": True
                 },
@@ -102,10 +123,28 @@ if __name__ == '__main__':
             
         stats = pstats.Stats(pr)
         stats.sort_stats(pstats.SortKey.TIME)
-        stats.print_stats(10)
+        # stats.print_stats(10)
+        
+        # remove_tmp_results()
+        if plot_all:
+            show_real_death_toll_voivodeship_shifted_by_hand(directory_to_data=directory,
+                                                             voivodeship=voivodeship,
+                                                             starting_day=10,
+                                                             day_in_which_colors_are_set=60,
+                                                             last_day=100,
+                                                             shift_simulated=True,
+                                                             save=True,
+                                                             show=True)
+            
+         
+            
+      
+    
 
-       
 
+            # plot_all_possible_plots(directory=directory)
+
+    
     # run_simulation_in_browser()
 
     # reproduce_plot_by_website()

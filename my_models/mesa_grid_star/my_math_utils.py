@@ -100,7 +100,7 @@ def calc_exec_time(grid_size, N, household_size, max_steps, iterations, betas, m
     household_factor = 0.4*household_size + 0.6
     coef = coef*household_factor
     
-    val = grid_size[0]*grid_size[1]*N*max_steps*runs
+    val = int(grid_size[0]*grid_size[1]) * int(N*max_steps*runs)
     
     calc_time_minutes = val * coef
     if calc_time_minutes > 60:
@@ -111,4 +111,43 @@ def calc_exec_time(grid_size, N, household_size, max_steps, iterations, betas, m
         minutes = round(calc_time_minutes, 1)
         
     print(f'It will take {hours} hours and {minutes} minutes to evaluate {runs} simulations')
+
+
+def sort_df_indices_by_col(df, column):
+    """
+    Returns dict in which keys are indices of dataframe and val is pos of that index
+    in df sorted by specified column
+    """
+    result = {}
+    df = df.sort_values(by=column)
     
+    for i, df_index in enumerate(df.index):
+        result[df_index] = i
+    
+    return result
+
+
+def find_best_x_shift_to_match_plots(y1_reference, y2, y2_start, y2_end):
+    """
+    Returns index of elem from which data y2[start: stop] best match any slice of the same length of y1.
+    Also returns fit error (SSE).
+    """
+    y1_reference = np.array(y1_reference)
+    y2 = np.array(y2[y2_start: y2_end+1])
+    
+    smallest_difference = 1e9
+    y2_length = y2_end - y2_start + 1
+    shift = 0
+    
+    for i in range(len(y1_reference) - len(y2) + 1):
+        y1_subset = y1_reference[i: i+y2_length]
+        
+        difference = np.sum((y2 - y1_subset)**2)
+        
+        if difference < smallest_difference:
+            smallest_difference = difference
+            shift = i
+            
+    shift = y2_start - shift
+    
+    return shift, smallest_difference

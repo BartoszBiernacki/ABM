@@ -31,13 +31,13 @@ max_steps = 250
 
 infected_cashiers_at_start = grid_side_length
 
-iterations = 5
-beta_sweep = (0.02625, 0.7, 1)
+iterations = 10
+beta_sweep = (0.012, 0.030, 1)
 beta_changes = ((1000, 2000), (1., 1.))
-mortality_sweep = (2/100, 3./100, 1)
+mortality_sweep = (2/100, 2./100, 1)
 visibility_sweep = (0.65, 1., 1)
 run = True
-plot_all = True
+plot_all = False
 
 
 if __name__ == '__main__':
@@ -125,7 +125,7 @@ if __name__ == '__main__':
         stats.sort_stats(pstats.SortKey.TIME)
         # stats.print_stats(10)
         
-        # remove_tmp_results()
+        remove_tmp_results()
         if plot_all:
             show_real_death_toll_voivodeship_shifted_by_hand(directory_to_data=directory,
                                                              voivodeship=voivodeship,

@@ -35,6 +35,16 @@ def calculate_ordinary_pearson_number_recovery(model):
     return int(np.sum(model.A_state_by_house_id == -1))
 
 
+def calculate_infected_toll(model):
+    # Everyone who is not susceptible was infected at some time.
+    init_population = (model.width
+                       * model.height
+                       * model.num_of_households_in_neighbourhood
+                       * model.customers_in_household)
+    
+    return init_population - calculate_ordinary_pearson_number_susceptible(model)
+
+
 # Cashiers ---------------------------------------------------
 def calculate_susceptible_cashiers(model):
     return int(np.sum(model.C_state_by_neigh_id == 0))

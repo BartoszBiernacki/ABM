@@ -1,5 +1,4 @@
 import pandas as pd
-from pathlib import Path
 import shutil
 
 from my_math_utils import *
@@ -7,7 +6,7 @@ from my_models.mesa_grid_star.real_data import RealData
 from text_processing import *
 
 
-def get_single_results(directory_to_not_averaged_results='TMP_SAVE/'):
+def get_single_results(not_avg_data_directory='TMP_SAVE/'):
     """
     Returns dict in which:
         keys are tuples of variable_params and run
@@ -15,8 +14,8 @@ def get_single_results(directory_to_not_averaged_results='TMP_SAVE/'):
 
     Intended to plot stochastic of simulations.
     """
-    fnames = all_fnames_from_dir(directory=directory_to_not_averaged_results)
-    unique_tuples = get_list_of_tuples_from_dir(directory=directory_to_not_averaged_results)
+    fnames = all_fnames_from_dir(directory=not_avg_data_directory)
+    unique_tuples = get_list_of_tuples_from_dir(directory=not_avg_data_directory)
     
     data_collector_single_results = {}
     for i, fname in enumerate(fnames):
@@ -43,7 +42,7 @@ def get_avg_results(directory, variable_params, ignore_dead_pandemics=False):
     there are not any infected or prodromal cashiers and clients.
     """
     
-    data_collector_model_results = get_single_results(directory_to_not_averaged_results=directory)
+    data_collector_model_results = get_single_results(not_avg_data_directory=directory)
     
     num_of_variable_model_params = len(variable_params)
     list_of_tuples = get_list_of_tuples_from_dir(directory=directory)
@@ -123,7 +122,7 @@ def save_avg_results(avg_results,
             real_data_obj = RealData(customers_in_household=3)
             real_general_data = real_data_obj.get_real_general_data()
             
-            # if N simulated matches N from real data, name folder with voivodeship name
+            # if N simulated matches N from real data, named folder as voivodeship name
             if np.sum(real_general_data['N MODEL'] == N) == 1:
                 voivodeship = real_general_data.index[real_general_data['N MODEL'] == N].tolist()[0]
                 save_dir += voivodeship.capitalize() + '/'
@@ -150,12 +149,11 @@ def save_avg_results(avg_results,
         file_id = 0
     
     # Saving dataframes
-    voivodeship = ''
     for tuple_key, df in avg_results.items():
         fname = f'Id={str(file_id).zfill(4)}'
         for param, val in zip(variable_params, tuple_key):
             try:
-                fname += '___' + param.capitalize() + '=' + str(round(val, 3))
+                fname += '___' + param.capitalize() + '=' + str(round(val, 4))
             except TypeError:
                 tuple_val = tuple([round(x, 3) for x in val])
                 fname += '___' + param.capitalize() + '=' + str(tuple_val)

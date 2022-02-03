@@ -31,6 +31,8 @@ from collectors import calculate_ordinary_pearson_number_illness_invisible
 from collectors import calculate_ordinary_pearson_number_dead
 from collectors import calculate_ordinary_pearson_number_recovery
 
+from collectors import calculate_infected_toll
+
 # Cashiers population
 from collectors import calculate_incubation_cashiers
 from collectors import calculate_prodromal_cashiers
@@ -284,6 +286,8 @@ class DiseaseModel(Model):
                              "Illness invisible people": calculate_ordinary_pearson_number_illness_invisible,
                              "Dead people": calculate_ordinary_pearson_number_dead,
                              "Recovery people": calculate_ordinary_pearson_number_recovery,
+                             
+                             "Infected toll": calculate_infected_toll,
                              
                              "Susceptible cashiers": calculate_susceptible_cashiers,
                              "Incubation cashiers": calculate_incubation_cashiers,

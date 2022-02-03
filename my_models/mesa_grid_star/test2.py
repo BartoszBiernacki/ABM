@@ -48,5 +48,9 @@ if __name__ == '__main__':
         ignore_healthy_counties=True)
     # ----------------------------------------------------------------------------------------------------------
 
+from test_small import RealData
 
- 
+
+class RealVisualisation(object):
+    def __init__(self):
+        pass

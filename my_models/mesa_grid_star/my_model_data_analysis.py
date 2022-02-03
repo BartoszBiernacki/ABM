@@ -365,3 +365,17 @@ def find_beta_for_all_voivodeships(mortality=2,
                                                             )
         result[voivodeship] = fit
     return result
+
+
+def get_last_day(fname: str):
+    """
+    Returns last day of simulation.
+    
+    :param fname: filename containing data from which last day will be read
+    :type fname: str
+    :return: last day of simulation.
+    :rtype: int
+    
+    """
+    df = pd.read_csv(fname)
+    return int(max(df['Day']))

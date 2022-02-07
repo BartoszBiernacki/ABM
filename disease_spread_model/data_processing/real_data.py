@@ -4,9 +4,12 @@ import pandas as pd
 import codecs
 import pickle
 
+from scipy.signal import savgol_filter, argrelmax, argrelmin
+
 from disease_spread_model.data_processing.text_processing import all_fnames_from_dir
 from disease_spread_model.data_processing.text_processing import rename_duplicates_in_df_index_column
 from disease_spread_model.config import Config
+from disease_spread_model.model.my_math_utils import *
 
 
 class RealData(object):
@@ -107,6 +110,14 @@ class RealData(object):
         f"processed/"
         f"pandemic/"
         f"entire_death_toll.pck")
+    
+    __fname_entire_interpolated_death_toll_final = (
+        f"{Config.ABM_dir}/"
+        f"disease_spread_model/"
+        f"data/"
+        f"processed/"
+        f"pandemic/"
+        f"entire_interpolated_death_toll.pck")
     
     __fname_entire_infected_toll_final = (
         f"{Config.ABM_dir}/"
@@ -856,3 +867,128 @@ class RealData(object):
         # -----------------------------------------------------------------------------------------------------------
         
         return shifted_real_death_toll
+
+    # Get last day of pandemic for each voivodeship
+    @staticmethod
+    def _get_neighbouring_indices_with_max_delta_value(data: np.ndarray):
+        """
+        Returns tuple (idx, idx + 1) for which expression
+        'abs(data[idx + 1] - data[idx])' takes the maximum.
+
+        Example: [1, 2, 8, 1, 5, 6, 3] --> (2, 3)
+            as arr[3] - arr[2] = 1 - 8 = -7 <--- max delta
+
+        :param data: array of numeric values
+        :type data: np.ndarray
+        """
+    
+        max_delta = 0
+        idx = None
+        for i in range(len(data) - 1):
+            val1 = data[i]
+            val2 = data[i + 1]
+        
+            delta = abs(val2 - val1)
+            if delta > max_delta:
+                max_delta = delta
+                idx = i
+    
+        return idx, idx + 1
+
+    @classmethod
+    def get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+            cls,
+            starting_days: dict,
+            days_to_search=200,
+            derivative_half_win_size=3,
+            derivative_smooth_out_win_size=21,
+            derivative_smooth_out_polyorder=3,
+    ):
+        """
+        Returns last day of first phase of pandemic.
+        
+        Last day is found as day between max delta peak_up - peak_down of
+        death toll derivative.
+        
+        Algorithm:
+            - get death toll and fill missing data in it
+            - calculate window derivative of death toll
+            - smooth up derivative
+            - find peaks in derivative (up and down)
+            - find two neighbouring peaks with max delta_y value
+            - last day = avg(peak1_x peak2_x)
+        
+        :param starting_days: days considered as the beginning of pandemic
+            for all voivodeships {voivodeship: start_day}
+        :type starting_days: dict
+        :param days_to_search: number of days since start_day where
+            the last day will be searched for
+        :type days_to_search: int
+        :param derivative_half_win_size: half window size of death toll
+            derivative e.g. val=3 --> 7 days.
+            E.g. (2) data = [0, 10, 20, 30, 40, 50], val=1 -->
+                derivative[2] = (30-10)/(idx(30) - idx(10)) = 20/(3-1) = 20/2 = 10
+        :type derivative_half_win_size: int
+        :param derivative_smooth_out_win_size: window size used for smooth up
+            derivative in savgol_filter.
+        :type derivative_smooth_out_win_size: int
+        :param derivative_smooth_out_polyorder: polyorder used for smooth up
+            derivative in savgol_filter.
+        :type derivative_smooth_out_polyorder: int
+        :return: dict {voivodeship: last_day_of_pandemic} for all voivodeships.
+        :rtype: dict
+
+        """
+        
+        # create empty result dict
+        result = {}
+        
+        # get death toll for all voivodeships (since 03.04.2019)
+        death_tolls = RealData.get_real_death_toll()
+        
+        # find last day of pandemic for each voivodeship
+        for voivodeship in cls.get_voivodeships():
+            # get start day based on percent counties dead
+            start_day = starting_days[voivodeship]
+            
+            # get entire death toll
+            death_toll = np.array((death_tolls.loc[voivodeship])).astype(float)
+            # complete death toll by linear interpolation where data if data are missing
+            death_toll_completed = complete_missing_data(values=death_toll)
+            # get derivative of completed death toll
+            derivative_completed = window_derivative(
+                y=death_toll_completed,
+                half_win_size=derivative_half_win_size)
+            # get just segment of this derivative which probably includes last day of
+            # first phase of pandemic, it will be plotted
+            derivative_completed_segment = derivative_completed[start_day: start_day + days_to_search]
+    
+            # smooth out derivative completed segment
+            yhat = savgol_filter(derivative_completed_segment,
+                                 window_length=derivative_smooth_out_win_size,
+                                 polyorder=derivative_smooth_out_polyorder)
+            # normalize to 1
+            yhat /= max(yhat)
+    
+            # Find x pos of maxima
+            x_peaks_max = argrelmax(data=yhat, order=7)[0]
+            # Find x pos of minima
+            x_peaks_min = argrelmin(data=yhat, order=7)[0]
+    
+            # make one sorted array of x coordinate of all found extremes
+            x_extremes = np.sort(np.array([*x_peaks_max, *x_peaks_min]))
+            # get indices of two neighbouring peaks with max delta val (from list of all peaks)
+            idx1, idx2 = cls._get_neighbouring_indices_with_max_delta_value(data=yhat[x_extremes])
+            # get number of days where two neighbouring peaks, with max delta value, occurred
+            # (since starting day)
+            idx1, idx2 = x_extremes[[idx1, idx2]]
+    
+            # get day number where initial phase of death toll ends (since start day)
+            idx_death_toll_change = int(np.average([idx1, idx2]))
+            
+            # add last day of first phase of pandemic (since 04.03.2019)
+            # to resulting dictionary
+            result[voivodeship] = idx_death_toll_change + start_day
+        
+        return result
+            

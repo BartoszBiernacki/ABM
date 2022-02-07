@@ -1,6 +1,7 @@
 import numpy as np
-from numba import njit
 import random
+import math
+from numba import njit
 from scipy.signal import find_peaks
 from scipy.optimize import curve_fit
 
@@ -149,3 +150,115 @@ def find_best_x_shift_to_match_plots(y1_reference, y2, y2_start, y2_end):
     shift = y2_start - shift
     
     return shift, smallest_difference
+
+
+def window_derivative(y, half_win_size):
+    x = np.arange(len(y))
+    y_prime = np.zeros_like(y)
+    for i in range(len(y)):
+        left = max(0, i - half_win_size)
+        right = min(len(y) - 1, i + half_win_size)
+        dy = y[right] - y[left]
+        dx = x[right] - x[left]
+        y_prime[i] = dy / dx
+    
+    return y_prime
+
+
+def complete_missing_data(values: np.ndarray):
+    """
+    Completes nans in array of floats by interpolation.
+    Example: [0, 1, 2, np.NaN, 4, np.NaN, np.NaN, 7] --> [0, 1, 2, 3, 4, 5, 6, 7]
+    
+    Returns completed copy of passed array.
+    
+    Note: if 'values' ends with np.NaN, then last sequence of nans
+        is not modified e.g. [0, np.NaN, 2, np.NaN] --> [0, 1, 2, np.NaN].
+    
+    :param values: numpy array of floats with missing entries.
+    :type values: np.ndarray
+    """
+    
+    # copy values (not modify passed array)
+    completed = np.copy(values)
+    
+    # iterate over all values in array
+    for i, val in enumerate(completed):
+        # is NaN?
+        if math.isnan(val):
+            # iterate over array items right after NaN appeared
+            # to find out where NaN sequence ends
+            for j in range(i + 1, len(completed)):
+                # if NaN sequence ended, interpolate and fill 'completed'
+                if not math.isnan(completed[j]):
+                    min_val = completed[i - 1]
+                    max_val = completed[j]
+                    
+                    delta_y = max_val - min_val
+                    delta_x = j - i + 1
+                    dy = delta_y / delta_x
+                    
+                    complementary_indices = np.arange(i, j)
+                    complementary_values = [min_val + dy * step for step in range(1, delta_x)]
+                    
+                    # print('delta_y', delta_y)
+                    # print('delta_x', delta_x)
+                    # print('dy', dy)
+                    # print('min value', min_val)
+                    # print('complementary indices', complementary_indices)
+                    # print('complementary values', complementary_values)
+                    # print()
+                    
+                    completed[complementary_indices] = complementary_values
+
+                    break
+    
+    return completed
+
+
+def get_indices_of_missing_data(data: np.ndarray):
+    """
+    Returns indices of nans in data array of floats by interpolation.
+    Output is 2D list where each entry is an array of uninterrupted sequence of nans.
+    
+    Example: [0, 1, 2, np.NaN, 4, np.NaN, np.NaN, 7] --> [[3], [5, 6]]
+    
+    Note: if 'data' ends with np.NaN, then last sequence of nans
+        is not returned e.g. [0, np.NaN, 2, 3, np.NaN] --> [[1]].
+    
+    
+    Implementation detail: I will iterate over data elem by elem if they
+        are not nans. If I get nan I will start iterate from its index until I get
+        first not nan value. From here I get uninterrupted sequence of nans.
+        To not duplicate sequences I fill nans with zeros and continue top level
+        iteration. To not modify data function operates on copy of passed data.
+
+
+    :param data: numpy array of floats with missing entries.
+    :type data: np.ndarray
+    :return: list of np.ndarray, each np.ndarray contains uninterrupted sequence
+        of indices nans
+    :rtype: list
+    """
+    
+    # It will be filled and returned
+    missing_indices = []
+    
+    completed = np.copy(data)
+    for i, val in enumerate(completed):
+        # is NaN?
+        if math.isnan(val):
+            # iterate over array items right after NaN appeared
+            # to find out where NaN sequence ends
+            for j in range(i + 1, len(completed)):
+                # If NaN sequence ended fill 'completed' and append
+                # found sequence to resulting list
+                if not math.isnan(completed[j]):
+
+                    complementary_indices = np.arange(i, j)
+                    missing_indices.append(complementary_indices)
+
+                    completed[complementary_indices] = np.zeros_like(complementary_indices)
+                    break
+                    
+    return missing_indices

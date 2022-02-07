@@ -483,5 +483,6 @@ def update_C_states_core(total_neighbourhoods,
                 
     C_go_incubation_because_shopping.fill(False)
     return replaced_cashiers_today
+
     
     

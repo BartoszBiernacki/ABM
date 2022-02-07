@@ -1,11 +1,15 @@
 """Making all kind of plots to visualize real, simulated or both data."""
+from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
-from pathlib import Path
+from scipy.signal import savgol_filter
+from scipy.signal import argrelmax
+from scipy.signal import argrelmin
 
-from .text_processing import *
-from .avg_results import Results
-from .real_data import RealData
+from disease_spread_model.data_processing.text_processing import *
+from disease_spread_model.data_processing.avg_results import Results
+from disease_spread_model.data_processing.real_data import RealData
 
+from disease_spread_model.config import Config
 from disease_spread_model.model.my_math_utils import *
 
 
@@ -1190,6 +1194,194 @@ class SimulatedVisualisation(object):
                             plot_name=" ".join(main_title.split()),
                             save=save,
                             show=show)
+
+
+class FindLastDayAnim(object):
+    """
+    Plot contains:
+        - death toll
+        - death toll completed
+        - derivative completed
+        - derivative smoothed up
+        - derivative maxima and minima
+        - vertical line showing last day of pandemic
+        - moving vertical line to help see derivative - death toll relation
+
+    Based on example from:
+    https://stackoverflow.com/questions/9401658/how-to-animate-a-scatter-plot
+    """
+    
+    def __init__(self, start_days: dict, voivodeship: str, fps=50):
+        
+        self.start_days = start_days
+        self.voivodeship = voivodeship
+        
+        self.days = Config.days_to_look_for_pandemic_end
+        self.derivative_half_win_size = Config.death_toll_derivative_half_win_size
+        self.derivative_smooth_out_win_size = Config.death_toll_derivative_smooth_out_win_size
+        self.derivative_smooth_out_polyorder = Config.death_toll_derivative_smooth_out_savgol_polyorder
+        
+        # Setup the figure and axes...
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
+        self.ax2 = self.ax.twinx()
+        
+        # Then setup FuncAnimation.
+        self.ani = FuncAnimation(self.fig, self.update, interval=1000 / fps,
+                                 init_func=self.setup_plot, frames=self.days,
+                                 blit=True, repeat=True)
+        
+        self.axvline = None
+    
+    def setup_plot(self):
+        """Initial drawing of plots."""
+        
+        # For some odd reason setup_plot is called twice which duplicates lines
+        # and legend entries, so I just clear axes before doing anything.
+        self.ax2.clear()
+        self.ax.clear()
+        
+        self.ax.set_xlabel('t, days')
+        self.ax.set_ylabel('Death toll')
+        self.ax2.set_ylabel('Normalized derivative of death toll')
+        
+        self.ax.set_title(self.voivodeship)
+        
+        # get  last day of pandemic
+        last_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+            starting_days=self.start_days,
+            days_to_search=self.days,
+            derivative_half_win_size=self.derivative_half_win_size,
+            derivative_smooth_out_win_size=self.derivative_smooth_out_win_size,
+            derivative_smooth_out_polyorder=self.derivative_smooth_out_polyorder
+        )
+        start_day = self.start_days[self.voivodeship]
+        last_day = last_days[self.voivodeship]
+        
+        # plot death toll segment
+        death_toll = np.array((RealData.get_real_death_toll().loc[self.voivodeship])).astype(float)
+        death_toll_segment = np.copy(death_toll[start_day: start_day + self.days])
+        self.ax.plot(death_toll_segment, color='C0', zorder=1, label='death toll',
+                     lw=4, alpha=0.7)
+        
+        # plot missing death toll segments approximated
+        death_toll_completed = complete_missing_data(values=death_toll)
+        missing_indices = get_indices_of_missing_data(data=death_toll)
+        for i, indices in enumerate(missing_indices):
+            
+            idx_min = indices[0] - 1
+            idx_max = indices[-1] + 2
+            
+            idx_min = max(0, idx_min - start_day)
+            idx_max = min(self.days, idx_max - start_day)
+            
+            if idx_min < self.days:
+                # plot with legend only first segment
+                if i == 0:
+                    self.ax.plot(range(idx_min, idx_max),
+                                 death_toll_completed[start_day + idx_min: start_day + idx_max],
+                                 color='black', lw=4, alpha=0.7, label='death toll interpolated')
+                else:
+                    self.ax.plot(range(idx_min, idx_max),
+                                 death_toll_completed[start_day + idx_min: start_day + idx_max],
+                                 color='black', lw=4, alpha=0.7)
+        
+        # # plot window derivative completed
+        derivative_completed = window_derivative(
+            y=death_toll_completed,
+            half_win_size=self.derivative_half_win_size)
+        derivative_completed_segment = np.copy(derivative_completed[start_day: start_day + self.days])
+        derivative_completed_segment /= max(derivative_completed_segment)
+        self.ax2.plot(derivative_completed_segment, color='C1', label='window derivative')
+        
+        # plot smooth out derivative completed
+        yhat = savgol_filter(
+            derivative_completed_segment,
+            window_length=self.derivative_smooth_out_win_size,
+            polyorder=self.derivative_smooth_out_polyorder
+        )
+        yhat /= max(yhat)
+        self.ax2.plot(yhat, color='C2', label=f'derivative smoothed up', lw=4)
+        
+        # Plot peaks (minima and maxima) of smoothed up derivative.
+        vec = np.copy(yhat)
+        
+        # Maxima
+        x_peaks_max = argrelmax(data=vec, order=7)[0]
+        self.ax2.scatter(x_peaks_max, vec[x_peaks_max], label='derivative maxima',
+                         color='lime', s=140, zorder=100)
+        # Minima
+        x_peaks_min = argrelmin(data=vec, order=7)[0]
+        self.ax2.scatter(x_peaks_min, vec[x_peaks_min], label='derivative minima',
+                         color='darkgreen', s=140, zorder=100)
+        
+        # plot last day of initial pandemic phase
+        self.axvline = self.ax2.axvline(last_day - start_day, color='red', lw=3, label='last day')
+        
+        # add legend (change y2 limits to avoid plots overlapping with legend)
+        self.ax2.set_ylim(-0.05, 1.2)
+        self.fig.legend(
+            loc="upper center",
+            ncol=4,
+            bbox_to_anchor=(0.5, 1),
+            bbox_transform=self.ax.transAxes,
+            fancybox=True,
+            shadow=True)
+        
+        # plot moving axvline to easily show death toll - derivative relation
+        self.axvline = self.ax.axvline(x=0, animated=True, color='black', lw=2)
+        
+        plt.tight_layout()
+        
+        # For FuncAnimation's sake, we need to return the artist we'll be using
+        # Note that it expects a sequence of artists, thus the trailing comma.
+        return self.axvline,
+    
+    def update(self, i):
+        """Update the vertical line."""
+        self.axvline.set_xdata(i % self.days)
+        
+        # We need to return the updated artist for FuncAnimation to draw..
+        # Note that it expects a sequence of artists, thus the trailing comma.
+        return self.axvline,
+    
+    @staticmethod
+    def save_animations(voivodeships: list, fps=50, start_days=None):
+        if 'all' in voivodeships:
+            voivodeships = RealData.get_voivodeships()
+            
+        if start_days is None:
+            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                percent_of_touched_counties=Config.percent_of_touched_counties,
+                ignore_healthy_counties=True)
+            
+        for voivodeship in voivodeships:
+            a = FindLastDayAnim(
+                start_days=start_days,
+                voivodeship=voivodeship,
+                fps=fps)
+            
+            save_dir = f"{Config.ABM_dir}/RESULTS/plots/Finding last day of pandemic/"
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            a.ani.save(f'{save_dir}{voivodeship}_{fps}.gif', writer='pillow', fps=fps)
+            print(f'{voivodeship} {fps} saved')
+
+    @staticmethod
+    def show_animations(voivodeships: list, fps=50, start_days=None):
+        if 'all' in voivodeships:
+            voivodeships = RealData.get_voivodeships()
+            
+        if start_days is None:
+            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                percent_of_touched_counties=Config.percent_of_touched_counties,
+                ignore_healthy_counties=True)
+    
+        for voivodeship in voivodeships:
+            a = FindLastDayAnim(
+                start_days=start_days,
+                voivodeship=voivodeship,
+                fps=fps)
+        
+            plt.show()
 
 
 if __name__ == '__main__':

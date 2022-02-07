@@ -93,8 +93,8 @@ SimulatedVisualisation.max_death_toll_fig_param1_xAxis_param2_series_param3(
 #  ***********************************************************
 
 # [24]  ******************************************************
-
-
+FindLastDayAnim.save_animations(voivodeships=['all'], fps=50)
+FindLastDayAnim.show_animations(voivodeships=['all'], fps=50)
 #  ***********************************************************
 
 # [16]  ******************************************************

@@ -130,32 +130,6 @@ def sort_dict_by_values(dictionary):
     return {k: v for k, v in sorted(dictionary.items(), key=lambda item: item[1])}
 
 
-def find_best_x_shift_to_match_plots(y1_reference, y2, y2_start, y2_end):
-    """
-    Returns index of elem from which data y2[start: stop] best match any slice of the same length of y1.
-    Also returns fit error (SSE).
-    """
-    y1_reference = np.array(y1_reference)
-    y2 = np.array(y2[y2_start: y2_end+1])
-    
-    smallest_difference = 1e9
-    y2_length = y2_end - y2_start + 1
-    shift = 0
-    
-    for i in range(len(y1_reference) - len(y2) + 1):
-        y1_subset = y1_reference[i: i+y2_length]
-        
-        difference = np.sum((y2 - y1_subset)**2)
-        
-        if difference < smallest_difference:
-            smallest_difference = difference
-            shift = i
-            
-    shift = y2_start - shift
-    
-    return shift, smallest_difference
-
-
 def window_derivative(y, half_win_size):
     x = np.arange(len(y))
     y_prime = np.zeros_like(y)

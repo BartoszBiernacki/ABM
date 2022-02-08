@@ -151,7 +151,6 @@ def find_out_who_wants_to_do_shopping(shopping_days_for_each_household_for_each_
     return array_to_fill
 
 
-# TODO take a look why else ...= False causes problem
 @njit(cache=True)
 def set_on_shopping_true_depends_on_shopping_situation(total_num_of_households,
                                                        situation,

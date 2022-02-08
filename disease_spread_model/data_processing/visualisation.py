@@ -9,6 +9,7 @@ from scipy.signal import argrelmin
 from disease_spread_model.data_processing.text_processing import *
 from disease_spread_model.data_processing.avg_results import Results
 from disease_spread_model.data_processing.real_data import RealData
+from disease_spread_model.model.model_adjustment import TuningModelParams
 
 from disease_spread_model.config import Config
 from disease_spread_model.model.my_math_utils import *
@@ -705,7 +706,7 @@ class RealVisualisation(object):
             t.set_color(colors[i])
 
         # remove line/marker symbol from legend (leave only colored description)
-        for i in leg._legend_handle_box.get_children()[0].get_children():
+        for i in leg._legend_handle_box.get_children()[0].get_children():   # noqa (suppres warning)
             i.get_children()[0].set_visible(False)
         
         # rotate x labels (voivodeship names)
@@ -1374,10 +1375,12 @@ class SimulatedVisualisation(object):
                     color=color_real, linewidth=5)
             
             # match simulated data to real by shifting along x axis
-            shift, error = find_best_x_shift_to_match_plots(y1_reference=y1_simulated,
-                                                            y2=y2_real,
-                                                            y2_start=y2_start,
-                                                            y2_end=y2_end)
+            shift, error = TuningModelParams.find_best_x_shift_to_match_plots(
+                y1_reference=y1_simulated,
+                y2=y2_real,
+                y2_start_idx=y2_start,
+                y2_end_idx=y2_end)
+            
             if shift < 0:
                 y2_new = [np.NaN] * (-shift) + y2_real.to_list()
             else:
@@ -1657,7 +1660,8 @@ class FindLastDayAnim(object):
                 ignore_healthy_counties=True)
     
         for voivodeship in voivodeships:
-            a = FindLastDayAnim(
+            
+            a = FindLastDayAnim(            # noqa (suppres warning)
                 start_days=start_days,
                 voivodeship=voivodeship,
                 fps=fps)
@@ -1666,13 +1670,5 @@ class FindLastDayAnim(object):
 
 
 if __name__ == '__main__':
-    SimulatedVisualisation.plot_auto_fit_death_toll(
-        directory=Config.avg_directory,
-        voivodeship=Config.voivodeship,
-        percent_of_touched_counties=20,
-        start_day_based_on='deaths',
-        show=True,
-        save=False
-    )
-
+    
     pass

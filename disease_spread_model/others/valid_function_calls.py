@@ -1,27 +1,29 @@
+from disease_spread_model.model.model_adjustment import TuningModelParams
 from disease_spread_model.data_processing.visualisation import *
 from disease_spread_model.config import Config
 
 
-# [3] ---------------------------------------------------------------------------------------------------------------
-shift, error = find_best_x_shift_to_match_plots(
+# [1] ---------------------------------------------------------------------------------------------------------------
+shift, error = TuningModelParams.find_best_x_shift_to_match_plots(
     y1_reference=[i * i for i in range(11)],
     y2=[50, 30, 20] + [i * i for i in range(11)],
-    y2_start=3,
-    y2_end=8)
+    y2_start_idx=3,
+    y2_end_idx=8)
 
 print(f"Shift = {shift} with fit error = {error}")
 # -------------------------------------------------------------------------------------------------------------------
 
 
-# [16]  ******************************************************
+# [2]  ******************************************************
 RealVisualisation.plot_pandemic_starting_days_by_touched_counties(
-    percent_of_touched_counties=40,
+    percent_of_death_counties=20,
+    percent_of_infected_counties=80,
     normalize_by_population=True,
     save=True,
     show=True)
 #  ***********************************************************
 
-# [17]  ******************************************************
+# [3]  ******************************************************
 RealVisualisation.show_real_death_toll(voivodeships=['all'],
                                        last_day=100,
                                        normalized=False,
@@ -29,7 +31,7 @@ RealVisualisation.show_real_death_toll(voivodeships=['all'],
                                        save=True)
 #  ***********************************************************
 
-# [18]  ******************************************************
+# [4]  ******************************************************
 SimulatedVisualisation.show_real_death_toll_for_voivodeship_shifted_by_hand(
     directory_to_data=Config.avg_directory,
     voivodeship=Config.voivodeship,
@@ -37,7 +39,7 @@ SimulatedVisualisation.show_real_death_toll_for_voivodeship_shifted_by_hand(
     save=True)
 #  ***********************************************************
 
-# [19]  ******************************************************
+# [5]  ******************************************************
 SimulatedVisualisation.plot_stochastic_1D_death_toll_dynamic(
     avg_directory=Config.avg_directory,
     not_avg_directory=Config.not_avg_directory,
@@ -46,7 +48,7 @@ SimulatedVisualisation.plot_stochastic_1D_death_toll_dynamic(
     save=True)
 #  ***********************************************************
 
-# [20]  ******************************************************
+# [6]  ******************************************************
 RealVisualisation.show_real_death_toll_shifted_by_hand(
     starting_day=10,
     day_in_which_colors_are_set=60,
@@ -57,7 +59,7 @@ RealVisualisation.show_real_death_toll_shifted_by_hand(
     save=False)
 #  ***********************************************************
 
-# [21]  ******************************************************
+# [7]  ******************************************************
 SimulatedVisualisation.plot_1D_modelReporter_dynamic_parameter_sweep(
     directory=Config.avg_directory,
     model_reporter='Dead people',
@@ -70,18 +72,18 @@ SimulatedVisualisation.plot_1D_modelReporter_dynamic_parameter_sweep(
 
 #  ***********************************************************
 
-# [22]  ******************************************************
+# [8]  ******************************************************
 SimulatedVisualisation.plot_auto_fit_death_toll(
-    directory=Config.avg_directory,
-    voivodeship=Config.voivodeship,
-    percent_of_touched_counties=Config.percent_of_touched_counties,
-    days_to_fit=Config.days_to_fit_death_toll,
-    ignore_healthy_counties=True,
-    show=True,
-    save=True)
+        directory=Config.avg_directory,
+        voivodeship=Config.voivodeship,
+        percent_of_touched_counties=20,
+        start_day_based_on='deaths',
+        show=True,
+        save=False
+    )
 #  ***********************************************************
 
-# [23]  ******************************************************
+# [9]  ******************************************************
 SimulatedVisualisation.max_death_toll_fig_param1_xAxis_param2_series_param3(
     directory=Config.avg_directory,
     param1='visibility',
@@ -92,12 +94,12 @@ SimulatedVisualisation.max_death_toll_fig_param1_xAxis_param2_series_param3(
 )
 #  ***********************************************************
 
-# [24]  ******************************************************
+# [10]  ******************************************************
 FindLastDayAnim.save_animations(voivodeships=['all'], fps=50)
 FindLastDayAnim.show_animations(voivodeships=['all'], fps=50)
 #  ***********************************************************
 
-# [16]  ******************************************************
+# [11]  ******************************************************
 RealVisualisation.plot_pandemic_starting_days_by_touched_counties(
     percent_of_death_counties=20,
     percent_of_infected_counties=80,
@@ -107,7 +109,7 @@ RealVisualisation.plot_pandemic_starting_days_by_touched_counties(
 )
 #  ***********************************************************
 
-# [16]  ******************************************************
+# [12]  ******************************************************
 for criterion in ['infections', 'deaths']:
     RealVisualisation.plot_pandemic_time(
         based_on=criterion,
@@ -116,7 +118,7 @@ for criterion in ['infections', 'deaths']:
         save=True)
 #  ***********************************************************
 
-# [16]  ******************************************************
+# [13]  ******************************************************
     RealVisualisation.compare_pandemic_time_by_infections_and_deaths(
         percent_of_deaths_counties=20,
         percent_of_infected_counties=80,

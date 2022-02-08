@@ -2,7 +2,7 @@ import itertools
 import numpy as np
 
 from model.my_math_utils import calc_exec_time
-from model.model_runs import run_and_save_simulations
+from model.model_runs import RunModel
 from data_processing.real_data import RealData
 from config import Config
 
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     # ----------------------------------------------------------------------------------------------------
 
     if run:
-        directory = run_and_save_simulations(
+        directory = RunModel.run_and_save_simulations(
             fixed_params={
                 "grid_size": grid_size,
                 "N": N,

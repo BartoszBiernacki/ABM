@@ -26,6 +26,7 @@ class UnusedPlots(object):
         plt.tight_layout()
         plt.show()
     
+        @classmethod
         def plot_1D_death_toll_dynamic_beta_sweep(cls,
                                                   directory: str,
                                                   normalized=False,
@@ -540,3 +541,41 @@ class UnusedPlots(object):
         print(x_img[np.argmax(y_img)])
     
         print(x_int_indexes)
+        
+    @classmethod
+    def get_days_and_deaths_by_beta_and_fixed_mortality_from_dir(cls, directory, const_mortality):
+        fnames = all_fnames_from_dir(directory=directory)
+    
+        result = {}
+        for i, fname in enumerate(fnames):
+            df = pd.read_csv(fname)
+            variable_params = variable_params_from_fname(fname=fname)
+        
+            mortality = float(variable_params['mortality'])
+            if mortality == const_mortality:
+                beta = variable_params['$\\beta$']
+                result[beta] = df[['Day', 'Dead people']].copy()
+    
+        if not result:
+            raise ValueError(f'Not found any data for const mortality = {const_mortality} in {directory}')
+    
+        return result
+
+    @classmethod
+    def get_days_and_deaths_by_mortality_and_fixed_beta_from_dir(cls, directory, const_beta):
+        fnames = all_fnames_from_dir(directory=directory)
+    
+        result = {}
+        for i, fname in enumerate(fnames):
+            df = pd.read_csv(fname)
+            variable_params = variable_params_from_fname(fname=fname)
+        
+            beta = float(variable_params['$\\beta$'])
+            if beta == const_beta:
+                mortality = variable_params['mortality']
+                result[mortality] = df[['Day', 'Dead people']].copy()
+    
+        if not result:
+            raise ValueError(f'Not found any data for const mortality = {const_beta} in {directory}')
+    
+        return result

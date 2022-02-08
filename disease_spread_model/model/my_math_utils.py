@@ -126,6 +126,10 @@ def sort_df_indices_by_col(df, column):
     return result
 
 
+def sort_dict_by_values(dictionary):
+    return {k: v for k, v in sorted(dictionary.items(), key=lambda item: item[1])}
+
+
 def find_best_x_shift_to_match_plots(y1_reference, y2, y2_start, y2_end):
     """
     Returns index of elem from which data y2[start: stop] best match any slice of the same length of y1.

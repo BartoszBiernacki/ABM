@@ -98,15 +98,30 @@ FindLastDayAnim.show_animations(voivodeships=['all'], fps=50)
 #  ***********************************************************
 
 # [16]  ******************************************************
-
+RealVisualisation.plot_pandemic_starting_days_by_touched_counties(
+    percent_of_death_counties=20,
+    percent_of_infected_counties=80,
+    normalize_by_population=False,
+    save=True,
+    show=True
+)
 #  ***********************************************************
 
 # [16]  ******************************************************
-
+for criterion in ['infections', 'deaths']:
+    RealVisualisation.plot_pandemic_time(
+        based_on=criterion,
+        percent_of_touched_counties=20,
+        show=True,
+        save=True)
 #  ***********************************************************
 
 # [16]  ******************************************************
-
+    RealVisualisation.compare_pandemic_time_by_infections_and_deaths(
+        percent_of_deaths_counties=20,
+        percent_of_infected_counties=80,
+        save=True,
+        show=True)
 #  ***********************************************************
 
 # [16]  ******************************************************

@@ -1,6 +1,7 @@
 """Making all kind of plots to visualize real, simulated or both data."""
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from scipy.signal import savgol_filter
 from scipy.signal import argrelmax
 from scipy.signal import argrelmin
@@ -74,7 +75,7 @@ class RealVisualisation(object):
         # set fig as current figure
         plt.figure(fig)
         if save:
-            save_dir = 'results/plots/' + plot_type + '/'
+            save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
             Path(save_dir).mkdir(parents=True, exist_ok=True)
             plt.savefig(save_dir + plot_name + '.pdf')
         
@@ -334,7 +335,8 @@ class RealVisualisation(object):
     
     @classmethod
     def plot_pandemic_starting_days_by_touched_counties(cls,
-                                                        percent_of_touched_counties: int,
+                                                        percent_of_death_counties: int,
+                                                        percent_of_infected_counties: int,
                                                         normalize_by_population: bool,
                                                         save=False,
                                                         show=True):
@@ -342,7 +344,6 @@ class RealVisualisation(object):
         Plots first day of pandemic for all voivodeships since data were collected.
         ALso plots death toll in that day.
 
-        First day results from the percent_of_touched_counties
         """
         
         fig = plt.figure(figsize=(12, 8))
@@ -350,112 +351,375 @@ class RealVisualisation(object):
         
         # PLot first (main) plot on main ax (starting day) **********************************************************
         # make title and labels
-        main_info = f"Day that is consider as starting day of pandemic for given voivodeship and death toll in that day.\n" \
-                    f" Day 0 is 04-03-2020."
-        detail_info = f'Starting day is the first day on which at least one person died in approximately' \
-                      f' {percent_of_touched_counties}% of counties.'
-        ignore_healthy_info = f'Counties in which no one died (or data are missing) are ignored or included (see legend).'
+        main_info = (f"Day that is consider as starting day of pandemic "
+                     f"for given voivodeship and death toll in that day.\n"
+                     f" Day 0 is 04-03-2020.")
         
-        ax.set_title(main_info + '\n' + detail_info + '\n' + ignore_healthy_info)
+        ax.set_title(main_info)
         ax.set_xlabel(f'Voivodeship')
-        ax.set_ylabel(f'Day number since 04-03-2020 which is considered to be the beginning of a pandemic',
-                      color='blue')
+        ax.set_ylabel(f'Day number since 04-03-2020 which is considered to be the beginning of a pandemic')
         
         # get starting day of pandemic by percent of touched counties
-        starting_days_healthy_ignored = \
+        starting_days_deaths = \
             RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_touched_counties,
-                ignore_healthy_counties=True)
-        
-        starting_days_healthy_included = \
-            RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_touched_counties,
+                percent_of_touched_counties=percent_of_death_counties,
                 ignore_healthy_counties=False)
         
+        starting_days_infections = \
+            RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                percent_of_touched_counties=percent_of_infected_counties)
+        
         # get voivodeships and used them to synchronize plots
-        voivodeships_ignored = starting_days_healthy_ignored.keys()
+        voivodeships_synchro = starting_days_infections.keys()
+        color_infections = 'lime'
+        color_deaths = 'deepskyblue'
         
-        # plot starting day, counties without deaths are ignored as it is plot this with points and extra line
-        l1 = ax.plot(voivodeships_ignored,
-                     [starting_days_healthy_ignored[voivodeship] for voivodeship in voivodeships_ignored],
-                     color='blue', linestyle='-.', alpha=0.6, marker='o',
-                     label='Starting day, counties without deaths are ignored.')
+        # plot starting_days_infections
+        l1 = ax.plot(voivodeships_synchro,
+                     [starting_days_infections[voivodeship] for voivodeship in voivodeships_synchro],
+                     color=color_infections, linestyle='-.', marker='o', mec='black',
+                     label=(f'Starting day by {percent_of_infected_counties}% of counties with '
+                            f'at least one infected case.'))
         
-        # plot starting day, counties without deaths are included
-        p2 = ax.scatter(voivodeships_ignored,
-                        [starting_days_healthy_included[voivodeship] for voivodeship in voivodeships_ignored],
-                        color='purple',
-                        alpha=0.4,
-                        label='Starting day, counties without deaths are included.')
-        
+        # plot starting_days_deaths
+        l2 = ax.plot(voivodeships_synchro,
+                     [starting_days_deaths[voivodeship] for voivodeship in voivodeships_synchro],
+                     color=color_deaths, linestyle='-.', marker='o', mec='black',
+                     label=(f'Starting day by {percent_of_death_counties}% of counties with '
+                            f'at least one death case.'))
+    
         # set y_lim to 0
-        ax.set_ylim([0, None])
+        ax.set_ylim([-5, None])
         
         # rotate label of outer x axis
         for tick in ax.get_xticklabels():
             tick.set_rotation(45)
-        # ************************************************************************************************************
+        # **************************************************************************************************
         
-        # Plot second plot on the other y axis (death toll in starting day) *****************************************
+        # Plot second plot on the other y axis (death toll in starting day) ********************************
         # get starting death toll by starting day by percent of touched counties
-        starting_death_toll_ignored = RealData.get_starting_death_toll_for_voivodeships_by_days(
-            voivodeships_days=starting_days_healthy_ignored)
+        starting_death_toll_deaths = RealData.get_starting_death_toll_for_voivodeships_by_days(
+            voivodeships_days=starting_days_deaths)
         
-        starting_death_toll_included = RealData.get_starting_death_toll_for_voivodeships_by_days(
-            voivodeships_days=starting_days_healthy_included)
+        starting_death_toll_infections = RealData.get_starting_death_toll_for_voivodeships_by_days(
+            voivodeships_days=starting_days_infections)
         
         # second y axis
         ax2 = ax.twinx()
+        
+        lab_death_toll_deaths = 'Death toll in starting day (by deaths).'
+        lab_death_toll_infections = 'Death toll in starting day (by infections).'
         
         # plot death toll on the second y axis (normalized or not)
         if normalize_by_population:
             y_label2 = '(Death toll / population) ' r'$\cdot 10^5$'
             population = RealData.get_real_general_data()['population']
-            p3 = ax2.scatter(voivodeships_ignored,
-                             [starting_death_toll_ignored[voivodeship] / population[voivodeship] * (10 ** 5)
-                              for voivodeship in voivodeships_ignored],
-                             color='Red',
-                             alpha=0.8,
-                             label='Death toll, counties without deaths are ignored.')
+            # preserve order of voivodeship on X axis
+
+            p3 = ax2.scatter(voivodeships_synchro,
+                             [starting_death_toll_infections[voivodeship] / population[voivodeship] * (10 ** 5)
+                              for voivodeship in voivodeships_synchro],
+                             color=color_infections,
+                             marker='s',
+                             edgecolors='black',
+                             label=lab_death_toll_infections)
             
-            p4 = ax2.scatter(voivodeships_ignored,
-                             [starting_death_toll_included[voivodeship] / population[voivodeship] * (10 ** 5)
-                              for voivodeship in voivodeships_ignored],
-                             color='Orange',
-                             alpha=0.4,
-                             label='Death toll, counties without deaths are included.')
+            p4 = ax2.scatter(voivodeships_synchro,
+                             [starting_death_toll_deaths[voivodeship] / population[voivodeship] * (10 ** 5)
+                              for voivodeship in voivodeships_synchro],
+                             color=color_deaths,
+                             marker='s',
+                             edgecolors='black',
+                             label=lab_death_toll_deaths)
         else:
             y_label2 = 'Death toll (in given day)'
-            p3 = ax2.scatter(voivodeships_ignored,
-                             [starting_death_toll_ignored[voivodeship] for voivodeship in voivodeships_ignored],
-                             color='Red',
-                             alpha=0.8,
-                             label='Death toll, counties without deaths are ignored.')
             
-            p4 = ax2.scatter(voivodeships_ignored,
-                             [starting_death_toll_included[voivodeship] for voivodeship in voivodeships_ignored],
-                             color='Orange',
-                             alpha=0.4,
-                             label='Death toll, counties without deaths are included.')
-        
-        # set y2 axis color matching color form line plot
-        ax2.set_ylabel(y_label2, color='red')
-        # set bottom y2 lim = 0
-        ax2.set_ylim([0, None])
-        # *************************************************************************************************************
+            p3 = ax2.scatter(voivodeships_synchro,
+                             [starting_death_toll_infections[voivodeship] for voivodeship in voivodeships_synchro],
+                             color=color_infections,
+                             marker='s',
+                             edgecolors='black',
+                             label=lab_death_toll_infections)
+            
+            p4 = ax2.scatter(voivodeships_synchro,
+                             [starting_death_toll_deaths[voivodeship] for voivodeship in voivodeships_synchro],
+                             color=color_deaths,
+                             marker='s',
+                             edgecolors='black',
+                             label=lab_death_toll_deaths)
+            
+        # set y2 axis label
+        ax2.set_ylabel(y_label2)
+        # ***********************************************************************************************************
         
         # add legend (both y axis have common legend)
-        plots = [l1, p2, p3, p4]
-        # for some reason scatter plot is a standard object, but line plot is a list contain line
+        plots = [l1, l2, p3, p4]
+        # for some reason scatter plot is a standard object, but line plot is a list containing lines
         plots = [p if type(p) != list else p[0] for p in plots]
         labs = [p.get_label() for p in plots]
         ax.legend(plots, labs)
         plt.tight_layout()
         
         cls.__show_and_save(fig=fig,
-                            plot_type='Starting days for voivodeships based on district deaths',
-                            plot_name=f'percent_of_touched_counties={percent_of_touched_counties},   '
-                                      f'normalize_by_population={normalize_by_population}',
+                            plot_type='Starting days for voivodeships based on touched district',
+                            plot_name=(f'percent_of_death_counties={percent_of_death_counties},   '
+                                       f'percent_of_infected_counties={percent_of_infected_counties},   '
+                                       f'normalize_by_population={normalize_by_population}'),
+                            save=save,
+                            show=show)
+
+    @classmethod
+    def plot_pandemic_time(cls,
+                           based_on='infections',
+                           percent_of_touched_counties=80,
+                           save=False,
+                           show=True):
+        """
+        Plots first day and last day of pandemic for all voivodeships
+        since data were collected. Start day can be deduced by percent of
+        death or infected counties.
+        
+        :param based_on: criterion by which start day is obtained.
+            Can be 'deaths' or 'infections'.
+        :type based_on: str
+        :param percent_of_touched_counties: percent of counties in which
+            someone died or got infected
+        :type percent_of_touched_counties: int
+        :param save: save?
+        :type save: bool
+        :param show: show?
+        :type show: bool
+        """
+    
+        # make fig and ax
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111)
+    
+        # make ax title and axis labels
+        main_info = (f"Days considered as the period of the first phase of the pandemic.\n"
+                     f"First day found based on percentage of counties with at least one "
+                     f"{'infection' if based_on=='infections' else 'death'} cases "
+                     f"({percent_of_touched_counties}%)."
+                     f" Day 0 is 04-03-2020.")
+    
+        ax.set_title(main_info)
+        ax.set_xlabel(f'Voivodeship')
+        ax.set_ylabel(f'Days of first phase of pandemic')
+    
+        # get starting day of pandemic by percent of touched counties
+        if based_on == 'deaths':
+            starting_days = \
+                RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                    percent_of_touched_counties=percent_of_touched_counties,
+                    ignore_healthy_counties=False)
+        else:
+            starting_days = \
+                RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                    percent_of_touched_counties=percent_of_touched_counties)
+            
+        ending_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+            starting_days=starting_days
+        )
+    
+        # Get dict {voivodeship: pandemic_duration_in_days}
+        pandemic_duration = {}
+        for voivodeship in starting_days.keys():
+            pandemic_duration[voivodeship] = ending_days[voivodeship] - starting_days[voivodeship]
+        
+        # Sort dict by values
+        pandemic_duration = sort_dict_by_values(pandemic_duration)
+        
+        # Get voivodeships and used them to synchronize plots.
+        # Plots ordered by pandemic duration in voivodeships
+        voivodeships_synchro = pandemic_duration.keys()
+        
+        # Plot days where first phase of pandemic was observed
+        for voivodeship in voivodeships_synchro:
+            x = voivodeship
+            y_up = ending_days[voivodeship]
+            y_down = starting_days[voivodeship]
+            markerline, stemlines, baseline = ax.stem(x,
+                                                      y_up,
+                                                      bottom=y_down,
+                                                      basefmt='C0o')
+            markerline.set_markersize(15)
+            baseline.set_markersize(15)
+            stemlines.set_linewidth(6)
+            
+        # rotate x labels
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(45)
+            
+        # improve y lower limit
+        ax.set_ylim([0, None])
+    
+        plt.tight_layout()
+        cls.__show_and_save(fig=fig,
+                            plot_type='Days of pandemic',
+                            plot_name=(f'Pandemic time based on {based_on}, '
+                                       f'percentage {percent_of_touched_counties}'),
+                            save=save,
+                            show=show)
+
+    @classmethod
+    def compare_pandemic_time_by_infections_and_deaths(cls,
+                                                       percent_of_deaths_counties=20,
+                                                       percent_of_infected_counties=80,
+                                                       save=False,
+                                                       show=True):
+        """
+        Plots first day and last day of pandemic for all voivodeships
+        since data were collected. One series where start day was deduced
+        by percent of death counties, second based on infections.
+
+        :param percent_of_deaths_counties: percent of counties in which
+            someone died
+        :type percent_of_deaths_counties: int
+        :param percent_of_infected_counties: percent of counties in which
+            someone got infected
+        :type percent_of_infected_counties: int
+        :param save: save?
+        :type save: bool
+        :param show: show?
+        :type show: bool
+        """
+    
+        # make fig and ax
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111)
+        # make ax title and axis labels
+        main_info = (f"Summary of designated positions in time of the first stage of the pandemic.\n"
+                     f"First day found based on percentage of counties with at least one "
+                     f"infection or death case. Day 0 is 04-03-2020")
+    
+        ax.set_title(main_info)
+        ax.set_xlabel(f'Voivodeship')
+        ax.set_ylabel(f'Days of first phase of pandemic')
+
+        # get starting day of pandemic by death counties
+        starting_days_by_deaths = \
+            RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                percent_of_touched_counties=percent_of_deaths_counties,
+                ignore_healthy_counties=False)
+    
+        # get starting day of pandemic by infected counties
+        starting_days_by_infections = \
+            RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                percent_of_touched_counties=percent_of_infected_counties)
+
+        ending_days_by_deaths = \
+            RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+                starting_days=starting_days_by_deaths
+            )
+        
+        ending_days_by_infections = \
+            RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+                starting_days=starting_days_by_infections
+            )
+    
+        # get list of voivodeships to iterate over them while getting pandemic duration
+        voivodeships = starting_days_by_infections.keys()
+        
+        # Get pandemic duration by deaths {voivodeship: pandemic_duration_in_days}
+        pandemic_duration_deaths = {}
+        for voivodeship in voivodeships:
+            pandemic_duration_deaths[voivodeship] =\
+                ending_days_by_deaths[voivodeship] - starting_days_by_deaths[voivodeship]
+            
+        # Get pandemic duration by infections {voivodeship: pandemic_duration_in_days}
+        pandemic_duration_infections = {}
+        for voivodeship in voivodeships:
+            pandemic_duration_infections[voivodeship] =\
+                ending_days_by_infections[voivodeship] - starting_days_by_infections[voivodeship]
+    
+        # Sort dict (pandemic_duration_deaths) by values
+        pandemic_duration_deaths = sort_dict_by_values(pandemic_duration_deaths)
+    
+        # Get voivodeships and used them to synchronize plots.
+        # Plots ordered by pandemic duration by deaths
+        voivodeships_synchro = pandemic_duration_deaths.keys()
+    
+        # prepare plotting colors and transparencies
+        color_deaths = 'C0'
+        color_infections = 'C1'
+        alpha_deaths = 0.4
+        alpha_infections = 0.4
+        
+        # Plot days where first phase of pandemic was observed
+        for voivodeship in voivodeships_synchro:
+            
+            x = voivodeship
+            
+            # plot pandemic duration by deaths
+            y_deaths_up = ending_days_by_deaths[voivodeship]
+            y_deaths_down = starting_days_by_deaths[voivodeship]
+            markerline, stemlines, baseline = ax.stem(x,
+                                                      y_deaths_up,
+                                                      bottom=y_deaths_down,
+                                                      basefmt='C0o')
+            markerline.set_markersize(15)
+            baseline.set_markersize(15)
+            stemlines.set_linewidth(6)
+
+            markerline.set_color(color_deaths)
+            baseline.set_color(color_deaths)
+            stemlines.set_color(color_deaths)
+
+            markerline.set_alpha(alpha_deaths)
+            baseline.set_alpha(alpha_deaths)
+            stemlines.set_alpha(alpha_deaths)
+
+            # plot pandemic duration by infections
+            y_infections_up = ending_days_by_infections[voivodeship]
+            y_infections_down = starting_days_by_infections[voivodeship]
+            markerline, stemlines, baseline = ax.stem(x,
+                                                      y_infections_up,
+                                                      bottom=y_infections_down,
+                                                      basefmt='C1o')
+            markerline.set_markersize(15)
+            baseline.set_markersize(15)
+            stemlines.set_linewidth(6)
+            
+            markerline.set_color(color_infections)
+            baseline.set_color(color_infections)
+            stemlines.set_color(color_infections)
+
+            markerline.set_alpha(alpha_infections)
+            baseline.set_alpha(alpha_infections)
+            stemlines.set_alpha(alpha_infections)
+
+        # manually create legend entries
+        deaths_patch = mpatches.Patch(color='None',
+                                      label=f'Days found by {percent_of_deaths_counties}% '
+                                            f'of counties where someone died')
+        infections_patch = mpatches.Patch(color='None',
+                                          label=f'Days found by {percent_of_infected_counties}% '
+                                                f'of counties where someone got infected')
+        
+        # create legend entries to a legend
+        leg = ax.legend(handles=[deaths_patch, infections_patch])
+        
+        # change text color of legend entries description
+        colors = [color_deaths, color_infections]
+        for i, (h, t) in enumerate(zip(leg.legendHandles, leg.get_texts())):
+            t.set_color(colors[i])
+
+        # remove line/marker symbol from legend (leave only colored description)
+        for i in leg._legend_handle_box.get_children()[0].get_children():
+            i.get_children()[0].set_visible(False)
+        
+        # rotate x labels (voivodeship names)
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(45)
+    
+        # improve y lower limit
+        ax.set_ylim([0, None])
+    
+        plt.tight_layout()
+        cls.__show_and_save(fig=fig,
+                            plot_type='Days of pandemic comparison',
+                            plot_name=(f'Counties death {percent_of_deaths_counties} percent,   '
+                                       f'infections {percent_of_infected_counties} percent'),
                             save=save,
                             show=show)
 
@@ -1094,13 +1358,22 @@ class SimulatedVisualisation(object):
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
         
-        ax.plot(range(len(y1_simulated)), y1_simulated, label='simulated', color='blue')
-        ax.plot(range(len(y2_real)), y2_real, label='real', color='orange')
+        # prepare line colors
+        color_real = 'lime'
+        color_real_shifted = 'forestgreen'
+        color_simulated = 'gold'
         
+        # plot simulated and real data
+        ax.plot(range(len(y1_simulated)), y1_simulated, label='simulated', color=color_simulated)
+        ax.plot(range(len(y2_real)), y2_real, label='real', color=color_real)
+        
+        # if y boundaries are given plot real shifted and matching segments
         if y2_start and y2_end:
+            # plot part of real data to which the simulated data will be matched
             ax.plot(np.arange(y2_start, y2_end), y2_real[y2_start: y2_end],
-                    color='red', linewidth=5)
+                    color=color_real, linewidth=5)
             
+            # match simulated data to real by shifting along x axis
             shift, error = find_best_x_shift_to_match_plots(y1_reference=y1_simulated,
                                                             y2=y2_real,
                                                             y2_start=y2_start,
@@ -1110,19 +1383,22 @@ class SimulatedVisualisation(object):
             else:
                 y2_new = y2_real[shift:]
             
-            ax.plot(range(len(y2_new)), y2_new, label='real shifted', color='green')
+            # plot shifted real data
+            ax.plot(range(len(y2_new)), y2_new, label='real shifted', color=color_real_shifted)
+            # plot matching segment of shifted real data
             ax.plot(np.arange(y2_start - shift, y2_end - shift),
                     y2_new[y2_start - shift: y2_end - shift],
-                    color='darkgreen',
+                    color=color_real_shifted,
                     linewidth=5)
             
+            # plot segment of simulated data for which data were matched
             ax.plot(np.arange(y2_start - shift, y2_end - shift),
                     y1_simulated[y2_start - shift: y2_end - shift],
-                    color='darkblue',
+                    color=color_simulated,
                     linewidth=5)
             
             ax.set_xlim(0, 265)
-            ax.set_ylim(0, 7 * y2_real[y2_end])
+            ax.set_ylim(0, 5 * y2_real[y2_end])
         else:
             ax.set_xlim(0, y2_end)
             ax.set_ylim(0, 1.1 * y2_real[y2_end])
@@ -1135,15 +1411,12 @@ class SimulatedVisualisation(object):
         
         return fig, ax
     
-    # TODO find last day of pandemic automatically and use instead of 'days_to_fit'
-    # TODO make this more nice looking
     @classmethod
     def plot_auto_fit_death_toll(cls,
                                  directory: str,
                                  voivodeship: str,
                                  percent_of_touched_counties: int,
-                                 days_to_fit: int,
-                                 ignore_healthy_counties=True,
+                                 start_day_based_on='deaths',
                                  show=True,
                                  save=False):
         """
@@ -1162,32 +1435,40 @@ class SimulatedVisualisation(object):
         latest_file = max(fnames, key=os.path.getctime)
         df = pd.read_csv(latest_file)
         
-        starting_day = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-            percent_of_touched_counties=percent_of_touched_counties,
-            ignore_healthy_counties=ignore_healthy_counties)
+        if start_day_based_on == 'deaths':
+            starting_day = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                percent_of_touched_counties=percent_of_touched_counties,
+                ignore_healthy_counties=False)
+        elif start_day_based_on == 'infections':
+            starting_day = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                percent_of_touched_counties=percent_of_touched_counties)
+        else:
+            raise ValueError(f"start_day_based_on must equal to 'deaths' or 'infections', but "
+                             f"{start_day_based_on} was given!")
         
-        print(f'Pandemic in {voivodeship} started in day {starting_day[voivodeship]} if '
-              f'assumed that in {percent_of_touched_counties}% of counties must be at least one death. '
-              f'Counties in no one ever died are {"ignored" if ignore_healthy_counties else "included"}.')
+        ending_day = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+            starting_days=starting_day
+        )
         
         fig, ax = cls.__plot_matched_real_death_toll_to_simulated(
             y1_simulated=df['Dead people'],
             y2_real=real_death_toll.loc[voivodeship],
             y2_start=starting_day[voivodeship],
-            y2_end=starting_day[voivodeship] + days_to_fit,
+            y2_end=starting_day[voivodeship] + ending_day[voivodeship],
             show=False)
         
-        ax.set_title(f'Real death toll for {voivodeship} shifted to best match simulated data on '
-                     f'{days_to_fit} days, \nsince in {percent_of_touched_counties} percent of counties '
-                     f'first death was reported.')
+        ax.set_title(f'Reported death toll for {voivodeship} shifted to best match simulated data on '
+                     f'the selected days range days.\n'
+                     f'Selected day range starts in a day when in {percent_of_touched_counties}% of '
+                     f'counties first {"death" if start_day_based_on == "deaths" else "infection"} '
+                     f'was reported.')
         ax.set_xlabel('t, days')
         ax.set_ylabel('death toll')
         plt.tight_layout()
         
         # handles showing and saving simulation
-        main_title = f'percent_of_touched_counties={percent_of_touched_counties},   ' \
-                     f'ignore_healthy_counties={ignore_healthy_counties},   ' \
-                     f'days_to_fit={days_to_fit}'
+        main_title = (f"start day based on {start_day_based_on},   "
+                      f"{percent_of_touched_counties} percent of counties")
         cls.__show_and_save(fig=fig,
                             dir_to_data=directory,
                             plot_type='Auto fit by percent_of_touched_counties',
@@ -1385,4 +1666,13 @@ class FindLastDayAnim(object):
 
 
 if __name__ == '__main__':
+    SimulatedVisualisation.plot_auto_fit_death_toll(
+        directory=Config.avg_directory,
+        voivodeship=Config.voivodeship,
+        percent_of_touched_counties=20,
+        start_day_based_on='deaths',
+        show=True,
+        save=False
+    )
+
     pass

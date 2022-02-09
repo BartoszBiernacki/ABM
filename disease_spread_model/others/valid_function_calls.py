@@ -127,5 +127,28 @@ for criterion in ['infections', 'deaths']:
 #  ***********************************************************
 
 # [16]  ******************************************************
+    first_days =\
+        RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+            percent_of_touched_counties=80
+        )
+    last_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+        starting_days=first_days
+    )
+    
+    TuningModelParams.find_beta_for_voivodeships(
+        voivodeships=['łódzkie'],
+        starting_days=first_days,
+        ending_days=last_days,
+        mortality=2,
+        visibility=0.65)
+    
+    TuningModelParams.find_mortality_for_voivodeships(
+        voivodeships=['łódzkie'],
+        starting_days=first_days,
+        ending_days=last_days,
+        beta=0.025,
+        visibility=0.65)
 
+    df = TuningModelParams.get_tuning_results()
+    [print(item['fname']) for _, item in df.iterrows()]
 #  ***********************************************************

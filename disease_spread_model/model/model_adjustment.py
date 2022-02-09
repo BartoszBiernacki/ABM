@@ -1,6 +1,7 @@
 from disease_spread_model.data_processing.text_processing import *
 from disease_spread_model.config import Config
 from disease_spread_model.model.model_runs import RunModel
+from disease_spread_model.data_processing.real_data import RealData
 
 
 class TuningModelParams(object):
@@ -12,7 +13,7 @@ class TuningModelParams(object):
     def __get_prev_results(cls):
         try:
             df = pd.read_csv(Config.TUNING_MODEL_PARAMS_FNAME)
-        except FileNotFoundError:
+        except (FileNotFoundError, pd.errors.EmptyDataError):
             df = pd.DataFrame(columns=[
                 'voivodeship',
                 'fit error per day',
@@ -24,7 +25,9 @@ class TuningModelParams(object):
                 'first day',
                 'last day',
                 'shift',
-                'timestamp'])
+                'timestamp',
+                'fname'
+            ])
         return df
 
     @classmethod
@@ -216,6 +219,7 @@ class TuningModelParams(object):
                 'first day': [starting_day],
                 'last day': [ending_day],
                 'shift': [shift],
+                'fname': [latest_file]
             
             },
             index=[-1],
@@ -560,29 +564,9 @@ class TuningModelParams(object):
         return result
     
 
-if __name__ == '__main__':
-    from disease_spread_model.data_processing.real_data import RealData
-    first_days =\
-        RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-            percent_of_touched_counties=80
-        )
-    last_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
-        starting_days=first_days
-    )
 
-    # TuningModelParams.find_beta_for_voivodeships(
-    #     voivodeships=['łódzkie'],
-    #     starting_days=first_days,
-    #     ending_days=last_days,
-    #     mortality=2,
-    #     visibility=0.65)
+
     
-    TuningModelParams.find_mortality_for_voivodeships(
-        voivodeships=['łódzkie'],
-        starting_days=first_days,
-        ending_days=last_days,
-        beta=0.025,
-        visibility=0.65)
 
 
    

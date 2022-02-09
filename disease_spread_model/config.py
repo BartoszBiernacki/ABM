@@ -16,6 +16,13 @@ class Config:
 
     AVG_SAVE_DIR = (f"{ABM_dir}/"
                     f"RESULTS/")
+
+    TUNING_MODEL_PARAMS_FNAME = (f"{ABM_dir}/"
+                                 f"disease_spread_model/"
+                                 f"data/"
+                                 f"processed/"
+                                 f"model_params_tuning/"
+                                 f"model_params_tuning_attempts.csv")
     
     days_to_look_for_pandemic_end = 200
     death_toll_derivative_half_win_size = 3

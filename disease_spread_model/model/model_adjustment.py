@@ -37,6 +37,64 @@ class TuningModelParams(object):
         shift = y2_start_idx - shift
     
         return shift, smallest_difference
+
+    @classmethod
+    def _save_tuning_result(cls, df_tuning_details: pd.DataFrame):
+    
+        def get_prev_results():
+            try:
+                df = pd.read_csv(Config.TUNING_MODEL_PARAMS_FNAME)
+            except FileNotFoundError:
+                df = pd.DataFrame(columns=[
+                    'voivodeship',
+                    'visibility',
+                    'mortality',
+                    'beta',
+                    'runs',
+                    'fit error',
+                    'lowest error',
+                    'timestamp'])
+            return df
+    
+        def sort_df_and_mark_best_tuned_params(df):
+            def mark_best(sub_df):
+                print('in')
+                print(sub_df.to_markdown())
+            
+                min_val = min(sub_df['fit error'])
+                for idx, row in sub_df.iterrows():
+                    if row['fit error'] == min_val:
+                        sub_df.loc[idx, 'lowest error'] = True
+                        print("KURWA TAK")
+                        print(sub_df.to_markdown())
+                    else:
+                        sub_df.loc[idx, 'lowest error'] = False
+            
+                print('out')
+                print(sub_df.to_markdown())
+                return sub_df
+        
+            df = df.groupby('voivodeship').apply(mark_best)
+            df.sort_values(by=['voivodeship', 'fit error'], inplace=True, ignore_index=True)
+        
+            return df
+    
+        def add_result_model_params_tuning_to_file(df_to_add: pd.DataFrame):
+            import time
+        
+            df = get_prev_results()  # get df from file
+            df_to_add['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S")
+            df = pd.concat([df, df_to_add])  # insert row (merge)
+        
+            # sort df and mark best runs
+            df = sort_df_and_mark_best_tuned_params(df)
+        
+            # save new df to csv
+            save_dir = os.path.split(Config.TUNING_MODEL_PARAMS_FNAME)[0]
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            df.to_csv(Config.TUNING_MODEL_PARAMS_FNAME, index=False)
+    
+        add_result_model_params_tuning_to_file(df_to_add=df_tuning_details)
     
     @classmethod
     def _find_shift_and_fit_error(cls,
@@ -128,6 +186,8 @@ class TuningModelParams(object):
             y2_end_idx=ending_day)
         
         return shift, error / (ending_day - starting_day)
+    
+    
     
     # find beta for given voivodeships with other params fixed **************************
     @classmethod
@@ -294,4 +354,22 @@ class TuningModelParams(object):
             result[voivodeship] = fit
         return result
     
-    # find beta for given voivodeships with other params fixed **************************
+    # TODO find mortality for given voivodeships with other params fixed
+    # find mortality for given voivodeships with other params fixed **************************
+    
+    
+if __name__ == '__main__':
+    df = pd.DataFrame(
+        {
+            "voivodeship": ["dupa"],
+            "visibility": [0.65],
+            "mortality": [0.03],
+            "beta": [0.01],
+            "runs": [33],
+            "fit error": [415]
+        },
+        index=[-1],
+    )
+    TuningModelParams._save_tuning_result(df_tuning_details=df)
+    
+

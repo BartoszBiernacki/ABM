@@ -1,0 +1,5 @@
+voivodeship,fit error per day,lowest error,visibility,mortality,beta,runs,first day,last day,shift,timestamp
+łódzkie,39.17,True,0.65,1.900,0.02500,12,34,118,20,2022-02-09 20:15:26
+łódzkie,45.31,False,0.65,2.100,0.02500,12,34,118,23,2022-02-09 20:16:09
+łódzkie,50.55,False,0.65,2.000,0.02500,12,34,118,26,2022-02-09 20:14:44
+łódzkie,64.57,False,0.65,1.805,0.02500,12,34,118,28,2022-02-09 20:16:52

@@ -85,6 +85,25 @@ class TuningModelParams(object):
     @classmethod
     def get_tuning_results(cls):
         return cls.__get_prev_results()
+    
+    @classmethod
+    def get_n_best_tuned_results(cls, n: int):
+        df = cls.__get_prev_results()
+        result_df = pd.DataFrame(columns=df.columns)
+        
+        for voivodeship in df['voivodeship'].unique():
+            result_df = pd.concat([result_df, df.loc[df['voivodeship'] == voivodeship].iloc[:n]])
+            
+        result_df.reset_index(inplace=True, drop=True)
+        return result_df
+
+    @classmethod
+    def get_n_lastly_tuned_results(cls, n: int):
+        df = cls.get_tuning_results()
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.sort_values(by='timestamp', ignore_index=True, inplace=True, ascending=False)
+        df.reset_index(inplace=True, drop=True)
+        return df.iloc[:n].to_markdown()
 
     @classmethod
     def _find_best_x_shift_to_match_plots(cls,
@@ -236,6 +255,7 @@ class TuningModelParams(object):
                                                        visibility,
                                                        starting_day,
                                                        ending_day,
+                                                       simulation_runs,
                                                        fit_iterations,
                                                        beta_init=0.025,
                                                        beta_scaling_factor=0.05,
@@ -255,7 +275,7 @@ class TuningModelParams(object):
                                                  beta=beta,
                                                  mortality=mortality,
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
 
@@ -264,7 +284,7 @@ class TuningModelParams(object):
                                                  beta=beta * (1 - beta_scaling_factor),
                                                  mortality=mortality,
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
 
@@ -273,7 +293,7 @@ class TuningModelParams(object):
                                                  beta=beta * (1 + beta_scaling_factor),
                                                  mortality=mortality,
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
         
@@ -350,13 +370,15 @@ class TuningModelParams(object):
                                    voivodeships: list[str],
                                    starting_days: dict,
                                    ending_days: dict,
+                                   fit_iterations=8,
+                                   simulation_runs=12,
                                    mortality=2,
                                    visibility=0.65):
-        
+    
         """
         Runs simulations to fit beta for all voivodeship separately. Returns result dict
 
-
+        
         :param voivodeships: list of voivodeships for which optimum beta will looked for.
             If voivodeships=['all'] it will be looked for all voivodeships.
         :type voivodeships: list[str]
@@ -364,6 +386,10 @@ class TuningModelParams(object):
         :type starting_days: dict
         :param ending_days: dict like {voivodeship: num of the last day of pandemic}
         :type ending_days: dict
+        :param fit_iterations: max number of tested model params
+        :type fit_iterations: int
+        :param simulation_runs: number of simulation which will be ran
+        :type simulation_runs: int
         :param mortality: mortality for which beta will be fitted (in percent, 2=2%).
         :type mortality: float
         :param visibility: visibility for which beta will be fitted (in percent).
@@ -387,7 +413,8 @@ class TuningModelParams(object):
                 visibility=visibility,
                 starting_day=starting_days[voivodeship],
                 ending_day=ending_days[voivodeship],
-                fit_iterations=8,
+                simulation_runs=simulation_runs,
+                fit_iterations=fit_iterations,
                 beta_init=0.025
             )
             result[voivodeship] = fit
@@ -402,6 +429,7 @@ class TuningModelParams(object):
                                                        starting_day,
                                                        ending_day,
                                                        fit_iterations,
+                                                       simulation_runs,
                                                        mortality_init=2,
                                                        mortality_scaling_factor=0.05,
                                                        ):
@@ -420,7 +448,7 @@ class TuningModelParams(object):
                                                  beta=beta,
                                                  mortality=mortality,
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
     
@@ -429,7 +457,7 @@ class TuningModelParams(object):
                                                  beta=beta,
                                                  mortality=mortality * (1 - mortality_scaling_factor),
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
     
@@ -438,7 +466,7 @@ class TuningModelParams(object):
                                                  beta=beta,
                                                  mortality=mortality * (1 + mortality_scaling_factor),
                                                  visibility=visibility,
-                                                 iterations=12,
+                                                 iterations=simulation_runs,
                                                  starting_day=starting_day,
                                                  ending_day=ending_day)
     
@@ -519,6 +547,8 @@ class TuningModelParams(object):
                                         voivodeships: list[str],
                                         starting_days: dict,
                                         ending_days: dict,
+                                        fit_iterations=8,
+                                        simulation_runs=12,
                                         beta=0.025,
                                         visibility=0.65):
     
@@ -533,6 +563,10 @@ class TuningModelParams(object):
         :type starting_days: dict
         :param ending_days: dict like {voivodeship: num of the last day of pandemic}
         :type ending_days: dict
+        :param fit_iterations: max number of tested model params
+        :type fit_iterations: int
+        :param simulation_runs: number of simulation which will be ran
+        :type simulation_runs: int
         :param beta: beta for which beta will be fitted (0.1 = 10%).
         :type beta: float
         :param visibility: visibility for which beta will be fitted (in percent).
@@ -556,17 +590,153 @@ class TuningModelParams(object):
                 visibility=visibility,
                 starting_day=starting_days[voivodeship],
                 ending_day=ending_days[voivodeship],
-                fit_iterations=8,
+                fit_iterations=fit_iterations,
+                simulation_runs=simulation_runs,
                 mortality_init=2,
                 mortality_scaling_factor=0.05
             )
             result[voivodeship] = fit
         return result
     
+    @classmethod
+    def super_test_optimizing(cls):
+        from scipy.optimize import fmin_cobyla
+        import random
+        
+        def fun(vec, extra):
+            print(extra)
+            
+            x, y = vec
+            
+            result = 10 * (x ** 2 + y ** 2) + 30 * random.random()
+            print(f'[{x:.4f} {y:.4f}], {result:.4f}')
+            return result
+
+        # initial guess
+        x0 = np.array([2.5, 2])
+        
+        # constraints
+        cons = [
+            lambda vec: vec[0] - 1,
+            lambda vec: -(vec[0] - 10),
+            lambda vec: vec[1] - 1,
+            lambda vec: -(vec[1] - 4),
+        ]
+        
+        # extra fun args
+        extra_args = {
+            'sth1': 4,
+            'sth2': 11,
+        }
+        
+        fit_result = fmin_cobyla(
+            func=fun,
+            x0=x0,
+            cons=cons,
+            args=(extra_args,),
+            consargs=(),
+            rhobeg=1,
+            rhoend=0.01,
+            maxfun=10,
+            catol=0,
+            
+        )
+        print()
+        print(fit_result)
+
+    # TODO choose method for optimizing (no derivative) maybe cobyla
+    @classmethod
+    def super_optimizing(
+            cls,
+            voivodeships: list[str],
+            starting_days: dict,
+            ending_days: dict,
+            visibility=0.65,
+            beta_init=0.025,
+            mortality_init=2,
+            simulation_runs=12,
+    ):
+        from scipy.optimize import fmin_cobyla
+    
+        def _fun_to_optimize(vec_beta_mortality, extra_dict_args):
+            beta, mortality = vec_beta_mortality
+            beta = beta/100
+            
+            sim_result = cls._find_shift_and_fit_error(
+                voivodeship=extra_dict_args['voivodeship'],
+                beta=beta,
+                mortality=mortality,
+                visibility=extra_dict_args['visibility'],
+                iterations=extra_dict_args['iterations'],
+                starting_day=extra_dict_args['starting_day'],
+                ending_day=extra_dict_args['ending_day']
+            )
+            
+            # return fit_error
+            fit_error = sim_result[1]
+            print(f'beta={beta*100:.4f}, mortality={mortality:.4f}, fit_error={fit_error:.2f}')
+            return fit_error
+            
+        for voivodeship in voivodeships:
+            # init guess (beta in percent not float to be same order as
+            # mortality to speed up convergence, beta is transformed later)
+            x0 = np.array([beta_init*100, mortality_init])
+
+            # constraints as inequalities 'expression' > 0, example:
+            # 'lambda vec: vec[0] - 1' --> x0[0] - 1 > 0 --> beta > 1%
+            cons = [
+                lambda vec: vec[0] - 1,
+                lambda vec: -(vec[0] - 10),
+                lambda vec: vec[1] - 1,
+                lambda vec: -(vec[1] - 4),
+            ]
+            
+            extra_args = {'voivodeship': voivodeship,
+                          'visibility': visibility,
+                          'iterations': simulation_runs,
+                          'starting_day': starting_days[voivodeship],
+                          'ending_day': ending_days[voivodeship]
+                          }
+
+            fit_result = fmin_cobyla(func=_fun_to_optimize,
+                                     x0=x0,
+                                     cons=cons,
+                                     args=(extra_args,),
+                                     consargs=(),
+                                     rhobeg=0.25,
+                                     rhoend=0.01,
+                                     maxfun=10,
+                                     catol=0,
+                                     )
+
+            print(f'\nFinal fit result = {fit_result}')
+            break
+        
+        
+if __name__ == '__main__':
+    first_days = \
+        RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+            percent_of_touched_counties=Config.percent_of_infected_counties)
+    last_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+        starting_days=first_days)
+
+    # TuningModelParams.super_test_optimizing()
+    
+    # TuningModelParams.super_optimizing(
+    #     voivodeships=['opolskie'],
+    #     starting_days=first_days,
+    #     ending_days=last_days,
+    #     visibility=0.65,
+    #     beta_init=0.025,
+    #     mortality_init=2,
+    #     simulation_runs=12,
+    # )
+
+    df_best = TuningModelParams.get_n_best_tuned_results(n=1)
+    df_best.sort_values(by='fit error per day', ascending=True,
+                        inplace=True, ignore_index=True)
+    print(df_best.to_markdown())
 
 
 
     
-
-
-   

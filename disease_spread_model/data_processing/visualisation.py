@@ -1375,7 +1375,7 @@ class SimulatedVisualisation(object):
                     color=color_real, linewidth=5)
             
             # match simulated data to real by shifting along x axis
-            shift, error = TuningModelParams.find_best_x_shift_to_match_plots(
+            shift, error = TuningModelParams._find_best_x_shift_to_match_plots(     # noqa (supress warning)
                 y1_reference=y1_simulated,
                 y2=y2_real,
                 y2_start_idx=y2_start,
@@ -1478,8 +1478,51 @@ class SimulatedVisualisation(object):
                             plot_name=" ".join(main_title.split()),
                             save=save,
                             show=show)
+        
+    @classmethod
+    def plot_death_toll_for_best_tuned_model_params(cls):
+        # TODO get extra list param like [beta, mortality] and add those to
+        # legend
 
+        # TODO plot also infected toll
+        
+        def _make_plot(sub_df):
+            real_death_toll = RealData.get_real_death_toll()
+            best_run = sub_df.iloc[0]
 
+            voivodeship = best_run['voivodeship']
+            starting_day = best_run['first day']
+            ending_day = best_run['last day']
+            fname = best_run['fname']
+            avg_df = pd.read_csv(fname)
+
+            fig, ax = cls.__plot_matched_real_death_toll_to_simulated(
+                y1_simulated=avg_df['Dead people'],
+                y2_real=real_death_toll.loc[voivodeship],
+                y2_start=starting_day,
+                y2_end=ending_day,
+                show=False)
+
+            ax.set_title(f'Reported death toll for {voivodeship} shifted to best match best simulated data on '
+                         f'the selected days range.')
+            ax.set_xlabel('t, days')
+            ax.set_ylabel('death toll')
+            plt.tight_layout()
+
+            # handles showing and saving simulation
+            main_title = f"finest model params tuning"
+            cls.__show_and_save(fig=fig,
+                                dir_to_data=os.path.split(fname)[0] + '/',
+                                plot_type='Auto fit by percent_of_touched_counties',
+                                plot_name=" ".join(main_title.split()),
+                                save=True,
+                                show=True)
+ 
+        df_tuning = TuningModelParams.get_tuning_results()
+        for voivodeship_tuned in df_tuning['voivodeship'].unique():
+            _make_plot(sub_df=df_tuning.loc[df_tuning['voivodeship'] == voivodeship_tuned])
+            
+            
 class FindLastDayAnim(object):
     """
     Plot contains:
@@ -1540,6 +1583,8 @@ class FindLastDayAnim(object):
         )
         start_day = self.start_days[self.voivodeship]
         last_day = last_days[self.voivodeship]
+        
+        print(f'start={start_day}, end={last_day}')
         
         # plot death toll segment
         death_toll = np.array((RealData.get_real_death_toll().loc[self.voivodeship])).astype(float)
@@ -1629,14 +1674,23 @@ class FindLastDayAnim(object):
         return self.axvline,
     
     @staticmethod
-    def save_animations(voivodeships: list, fps=50, start_days=None):
+    def make_animations(voivodeships: list,
+                        fps=50,
+                        start_days_by='deaths',
+                        show=True,
+                        save=False):
         if 'all' in voivodeships:
             voivodeships = RealData.get_voivodeships()
             
-        if start_days is None:
+        if start_days_by == 'deaths':
             start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=Config.percent_of_touched_counties,
+                percent_of_touched_counties=Config.percent_of_death_counties,
                 ignore_healthy_counties=True)
+        elif start_days_by == 'infections':
+            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                percent_of_touched_counties=Config.percent_of_infected_counties)
+        else:
+            raise ValueError(f'start_days_by has to be "deaths" or "infections", but {start_days_by} was given')
             
         for voivodeship in voivodeships:
             a = FindLastDayAnim(
@@ -1644,31 +1698,31 @@ class FindLastDayAnim(object):
                 voivodeship=voivodeship,
                 fps=fps)
             
-            save_dir = f"{Config.ABM_dir}/RESULTS/plots/Finding last day of pandemic/"
-            Path(save_dir).mkdir(parents=True, exist_ok=True)
-            a.ani.save(f'{save_dir}{voivodeship}_{fps}.gif', writer='pillow', fps=fps)
-            print(f'{voivodeship} {fps} saved')
-
-    @staticmethod
-    def show_animations(voivodeships: list, fps=50, start_days=None):
-        if 'all' in voivodeships:
-            voivodeships = RealData.get_voivodeships()
+            if show:
+                plt.show()
+                
+            if save:
+                save_dir = f"{Config.ABM_dir}/RESULTS/plots/Finding last day of pandemic/"
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                fname = (f"{save_dir}{voivodeship} start_by{start_days_by} in "
+                         f"{Config.percent_of_death_counties if start_days_by=='deaths' else Config.percent_of_infected_counties}"
+                         f" percent of counties.gif")
+                a.ani.save(fname,
+                           writer='pillow',
+                           fps=fps)
+                print(f'{voivodeship} {fps} saved')
             
-        if start_days is None:
-            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=Config.percent_of_touched_counties,
-                ignore_healthy_counties=True)
-    
-        for voivodeship in voivodeships:
-            
-            a = FindLastDayAnim(            # noqa (suppres warning)
-                start_days=start_days,
-                voivodeship=voivodeship,
-                fps=fps)
-        
-            plt.show()
-
 
 if __name__ == '__main__':
     
+    # TODO design scatter like plot with best beta-mortality pairs
+    # for each voivodeship
+    
+    # FindLastDayAnim.make_animations(voivodeships=['opolskie'],
+    #                                 start_days_by='infections',
+    #                                 fps=50,
+    #                                 show=True,
+    #                                 save=False)
+    
+    SimulatedVisualisation.plot_death_toll_for_best_tuned_model_params()
     pass

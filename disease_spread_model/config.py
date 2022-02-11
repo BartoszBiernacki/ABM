@@ -29,10 +29,10 @@ class Config:
     death_toll_derivative_smooth_out_win_size = 21
     death_toll_derivative_smooth_out_savgol_polyorder = 3
     
-    days_to_fit_death_toll = 60
     customers_in_household = 3
     
-    percent_of_touched_counties = 30
+    percent_of_death_counties = 30
+    percent_of_infected_counties = 80
     voivodeship = 'łódzkie'
 
     avg_directory = (

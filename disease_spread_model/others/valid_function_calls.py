@@ -4,7 +4,7 @@ from disease_spread_model.config import Config
 
 
 # [1] ---------------------------------------------------------------------------------------------------------------
-shift, error = TuningModelParams.find_best_x_shift_to_match_plots(
+shift, error = TuningModelParams._find_best_x_shift_to_match_plots(
     y1_reference=[i * i for i in range(11)],
     y2=[50, 30, 20] + [i * i for i in range(11)],
     y2_start_idx=3,
@@ -95,8 +95,11 @@ SimulatedVisualisation.max_death_toll_fig_param1_xAxis_param2_series_param3(
 #  ***********************************************************
 
 # [10]  ******************************************************
-FindLastDayAnim.save_animations(voivodeships=['all'], fps=50)
-FindLastDayAnim.show_animations(voivodeships=['all'], fps=50)
+FindLastDayAnim.make_animations(voivodeships=['opolskie'],
+                                start_days_by='infections',
+                                fps=50,
+                                show=True,
+                                save=False)
 #  ***********************************************************
 
 # [11]  ******************************************************
@@ -148,6 +151,16 @@ for criterion in ['infections', 'deaths']:
         ending_days=last_days,
         beta=0.025,
         visibility=0.65)
+
+    TuningModelParams.super_optimizing(
+        voivodeships=['opolskie'],
+        starting_days=first_days,
+        ending_days=last_days,
+        visibility=0.65,
+        beta_init=0.025,
+        mortality_init=2,
+        simulation_runs=12,
+    )
 
     df = TuningModelParams.get_tuning_results()
     [print(item['fname']) for _, item in df.iterrows()]

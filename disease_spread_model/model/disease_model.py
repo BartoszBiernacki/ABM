@@ -61,6 +61,8 @@ from .collectors import calculate_infected_by_extra_cashier_today
 from .collectors import get_day
 
 
+# TODO implement starting percent of infected peoples
+# TODO implement probability of getting infected by housemate
 class DiseaseModel(Model):
     def __init__(self,
                  grid_size,

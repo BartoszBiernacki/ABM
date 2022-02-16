@@ -644,7 +644,6 @@ class TuningModelParams(object):
         print()
         print(fit_result)
 
-    # TODO choose method for optimizing (no derivative) maybe cobyla
     @classmethod
     def super_optimizing(
             cls,
@@ -713,6 +712,8 @@ class TuningModelParams(object):
             break
         
         
+# TODO implement scipy.minimize to find on best tuned praeter with other params fixed
+# TODO add 'start day by' and 'percent of touched counties' columns to tuned df
 if __name__ == '__main__':
     first_days = \
         RealData.get_starting_days_for_voivodeships_based_on_district_infections(

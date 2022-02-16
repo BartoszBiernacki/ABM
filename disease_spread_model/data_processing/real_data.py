@@ -1,13 +1,11 @@
 """Extracting real pandemic and geospatial data"""
 import numpy as np
-import pandas as pd
 import codecs
 import pickle
 
-from scipy.signal import savgol_filter, argrelmax, argrelmin
+from scipy.signal import savgol_filter, argrelmax
 
-from disease_spread_model.data_processing.text_processing import all_fnames_from_dir
-from disease_spread_model.data_processing.text_processing import rename_duplicates_in_df_index_column
+from disease_spread_model.data_processing.text_processing import *
 from disease_spread_model.config import Config
 from disease_spread_model.model.my_math_utils import *
 
@@ -993,113 +991,177 @@ class RealData(object):
                 idx = i
     
         return idx, idx + 1
-
+    
     @classmethod
-    def get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+    def ending_days_by_death_toll_slope(
             cls,
-            starting_days: dict,
-            days_to_search=200,
-            derivative_half_win_size=3,
-            derivative_smooth_out_win_size=21,
-            derivative_smooth_out_polyorder=3,
+            start_days_by='deaths',
+            percent_of_touched_counties=20,
+            last_date='2020-07-01',
+            death_toll_smooth_out_win_size=21,
+            death_toll_smooth_out_polyorder=3,
     ):
         """
         Returns last day of first phase of pandemic.
         
-        Last day is found as day between max delta peak_up - peak_down of
-        death toll derivative.
+        Last day is a closest day to two month since start of pandemic,
+        with a death toll slope peak at least as high as a half of max death toll slope.
+        
+        If this function is called again with same args as ever before
+        then return data from file created before
         
         Algorithm:
             - get death toll and fill missing data in it
-            - calculate window derivative of death toll
-            - smooth up derivative
-            - find peaks in derivative (up and down)
-            - find two neighbouring peaks with max delta_y value
-            - last day = avg(peak1_x peak2_x)
+            - smooth out death toll
+            - fit line for each segment of smooth 'death_toll[day-3: day+4]'
+            - normalize slope such 'max_slope=1' on given interval
+            - plot slope (aka. derivative)
+            - find peaks in a slope (up and down)
+            - find last day as peak:
+                * nearest to day 60 since start day
+                * peak value > 0.5
         
-        :param starting_days: days considered as the beginning of pandemic
-            for all voivodeships {voivodeship: start_day}
-        :type starting_days: dict
-        :param days_to_search: number of days since start_day where
-            the last day will be searched for
-        :type days_to_search: int
-        :param derivative_half_win_size: half window size of death toll
-            derivative e.g. val=3 --> 7 days.
-            E.g. (2) data = [0, 10, 20, 30, 40, 50], val=1 -->
-                derivative[2] = (30-10)/(idx(30) - idx(10)) = 20/(3-1) = 20/2 = 10
-        :type derivative_half_win_size: int
-        :param derivative_smooth_out_win_size: window size used for smooth up
-            derivative in savgol_filter.
-        :type derivative_smooth_out_win_size: int
-        :param derivative_smooth_out_polyorder: polyorder used for smooth up
-            derivative in savgol_filter.
-        :type derivative_smooth_out_polyorder: int
+        :param start_days_by: 'deaths' or 'infections'
+        :type start_days_by: str
+        :param percent_of_touched_counties: how many counties has to be
+            affected by 'start_days_by' to set given day as first day of pandemic.
+        :type percent_of_touched_counties: int
+        :param last_date: date in a format 'YYYY-mm-dd' that can possibly be the
+            last day of pandemic
+        :type last_date: str
+        :param death_toll_smooth_out_win_size: window size used to smooth up
+            death toll in 'savgol_filter', has to be odd number
+        :type death_toll_smooth_out_win_size: int
+        :param death_toll_smooth_out_polyorder: polyorder used for smooth up
+            death toll in savgol_filter.
+        :type death_toll_smooth_out_polyorder: int
         :return: dict {voivodeship: last_day_of_pandemic} for all voivodeships.
         :rtype: dict
 
         """
         
-        # create empty result dict
-        result = {}
-        
-        # get death toll for all voivodeships (since 03.04.2019)
-        death_tolls = RealData.get_real_death_toll()
-        
-        # find last day of pandemic for each voivodeship
-        for voivodeship in cls.get_voivodeships():
-            # get start day based on percent counties dead
-            start_day = starting_days[voivodeship]
+        def fdir_from_args():
+            _dir = (f"{Config.ABM_dir}/"
+                        f"disease_spread_model/"
+                        f"data/"
+                        f"processed/"
+                        f"pandemic/"
+                        f"last_days/")
             
-            # get entire death toll
-            death_toll = np.array((death_tolls.loc[voivodeship])).astype(float)
-            # complete death toll by linear interpolation where data if data are missing
-            death_toll_completed = complete_missing_data(values=death_toll)
-            # get derivative of completed death toll
-            derivative_completed = window_derivative(
-                y=death_toll_completed,
-                half_win_size=derivative_half_win_size)
-            # get just segment of this derivative which probably includes last day of
-            # first phase of pandemic, it will be plotted
-            derivative_completed_segment = derivative_completed[start_day: start_day + days_to_search]
-    
-            # smooth out derivative completed segment
-            yhat = savgol_filter(derivative_completed_segment,
-                                 window_length=derivative_smooth_out_win_size,
-                                 polyorder=derivative_smooth_out_polyorder)
-            # normalize to 1
-            yhat /= max(yhat)
-    
-            # Find x pos of maxima
-            x_peaks_max = argrelmax(data=yhat, order=7)[0]
-            # Find x pos of minima
-            x_peaks_min = argrelmin(data=yhat, order=7)[0]
-    
-            # make one sorted array of x coordinate of all found extremes
-            x_extremes = np.sort(np.array([*x_peaks_max, *x_peaks_min]))
-            # get indices of two neighbouring peaks with max delta val (from list of all peaks)
-            idx1, idx2 = cls._get_neighbouring_indices_with_max_delta_value(data=yhat[x_extremes])
-            # get number of days where two neighbouring peaks, with max delta value, occurred
-            # (since starting day)
-            idx1, idx2 = x_extremes[[idx1, idx2]]
-    
-            # get day number where initial phase of death toll ends (since start day)
-            idx_death_toll_change = int(np.average([idx1, idx2]))
-            
-            # add last day of first phase of pandemic (since 04.03.2019)
-            # to resulting dictionary
-            result[voivodeship] = idx_death_toll_change + start_day
+            fname = (f"{start_days_by}_{percent_of_touched_counties} "
+                     f"last_date_{last_date} "
+                     f"win_size_{death_toll_smooth_out_win_size}"
+                     f"polyorder_{death_toll_smooth_out_polyorder}"
+                     f".pck")
+
+            return _dir + fname
         
-        return result
+        def save_result(result_dict):
+            fdir = fdir_from_args()
+            save_dir = os.path.split(fdir)[0]
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+            with open(fdir, 'wb') as handle:
+                pickle.dump(result_dict,
+                            handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+
+        def was_found_before():
+            return os.path.isfile(fdir_from_args())
+        
+        def read_result():
+            with open(fdir_from_args(), 'rb') as handle:
+                return pickle.load(handle)
+                
+        def compute_last_days():
+            # create empty result dict
+            result = {}
     
- 
+            # get start days dict
+            if start_days_by == 'deaths':
+                start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                    percent_of_touched_counties=percent_of_touched_counties,
+                    ignore_healthy_counties=True)
+            elif start_days_by == 'infections':
+                start_days = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                    percent_of_touched_counties=percent_of_touched_counties)
+            else:
+                raise ValueError(f'start_days_by has to be "deaths" or "infections", but {start_days_by} was given')
+    
+            # get real death toll for all voivodeships (since 03.04.2019)
+            death_tolls = RealData.get_real_death_toll()
+    
+            # fill gaps in real death toll
+            for voivodeship in RealData.get_voivodeships():
+                death_tolls.loc[voivodeship] = complete_missing_data(values=death_tolls.loc[voivodeship])
+    
+            # smooth out death toll
+            death_tolls_smooth = death_tolls.copy()
+            for voivodeship in RealData.get_voivodeships():
+                death_tolls_smooth.loc[voivodeship] = savgol_filter(
+                    x=death_tolls.loc[voivodeship],
+                    window_length=death_toll_smooth_out_win_size,
+                    polyorder=death_toll_smooth_out_polyorder)
+    
+            # get last day in which death pandemic last day will be looked for
+            last_day_to_search = list(death_tolls.columns).index(last_date)
+            
+            # find last day of pandemic for each voivodeship
+            for voivodeship in cls.get_voivodeships():
+                
+                # get start day based on percent counties dead
+                day0 = start_days[voivodeship]
+                if day0 > last_day_to_search:
+                    result[voivodeship] = np.NaN
+                    continue
+    
+                # slope of smooth death toll
+                slope_smooth = slope_from_linear_fit(
+                    data=death_tolls_smooth.loc[voivodeship],
+                    half_win_size=3)
+                
+                # normalize slope to 1
+                if max(slope_smooth[day0: last_day_to_search]) > 0:
+                    slope_smooth /= max(slope_smooth[day0: last_day_to_search])
+    
+                # Get peaks (maxima) of slope of smoothed up death toll.
+                vec = np.copy(slope_smooth[day0: last_day_to_search])
+    
+                # Maxima of slope
+                x_peaks_max = argrelmax(data=vec, order=8)[0]
+    
+                # last of of pandemic as day of peak closest to 2 moths with derivative > 0.5
+                # get list of candidates for last day
+                last_day_candidates = [x for x in x_peaks_max if vec[x] > 0.5]
+                # if there are no candidates add day with largest peak
+                if not last_day_candidates:
+                    try:
+                        last_day_candidates.append(max(x_peaks_max, key=lambda x: vec[x]))
+                    except ValueError:
+                        # if there are no peaks add 60
+                        last_day_candidates.append(60)
+    
+                # choose find last day (nearest to 60) from candidates
+                last_day = min(last_day_candidates, key=lambda x: abs(x - 60))
+                
+                # add last day to result dict
+                result[voivodeship] = day0 + last_day
+                
+            return result
+        
+        if was_found_before():
+            return read_result()
+        else:
+            result = compute_last_days()
+            save_result(result_dict=result)
+            return result
+            
+# TODO figure out better way of finding last day of pandemic
 if __name__ == '__main__':
-    start_days_infections = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-        percent_of_touched_counties=80
-    )
-    print(start_days_infections)
-    
-    start_days_deaths = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-        percent_of_touched_counties=20,
-        ignore_healthy_counties=True
-    )
-    print(start_days_deaths)
+    RealData.ending_days_by_death_toll_slope(
+        start_days_by='infections',
+        percent_of_touched_counties=80,
+        last_date='2020-07-01',
+        death_toll_smooth_out_win_size=21,
+        death_toll_smooth_out_polyorder=3,
+        )

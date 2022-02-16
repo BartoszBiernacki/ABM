@@ -25,7 +25,7 @@ class Config:
                                  f"model_params_tuning_attempts.csv")
     
     days_to_look_for_pandemic_end = 200
-    death_toll_derivative_half_win_size = 3
+    death_toll_derivative_half_win_size = 7
     death_toll_derivative_smooth_out_win_size = 21
     death_toll_derivative_smooth_out_savgol_polyorder = 3
     

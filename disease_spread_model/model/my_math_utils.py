@@ -162,8 +162,11 @@ def complete_missing_data(values: np.ndarray):
     
     # iterate over all values in array
     for i, val in enumerate(completed):
-        # is NaN?
-        if math.isnan(val):
+        # is first value NaN?
+        if math.isnan(val) and i == 0:
+            completed[i] = 0
+        # is any other value NaN?
+        elif math.isnan(val):
             # iterate over array items right after NaN appeared
             # to find out where NaN sequence ends
             for j in range(i + 1, len(completed)):
@@ -240,3 +243,22 @@ def get_indices_of_missing_data(data: np.ndarray):
                     break
                     
     return missing_indices
+
+
+def slope_from_linear_fit(data, half_win_size):
+    from scipy.stats import linregress
+
+    slope = np.zeros_like(data)
+
+    for i in range(len(data)):
+        left = max(0, i - half_win_size)
+        right = min(len(data) - 1, i + half_win_size)
+    
+        y = np.array(data[left: right + 1]).astype(float)
+        x = np.arange(len(y))
+    
+        linefit = linregress(x, y)
+        slope[i] = linefit.slope
+    return slope
+
+

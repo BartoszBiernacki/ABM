@@ -1,3 +1,193 @@
+class FindLastDayAnim(object):
+    """
+    Plot contains:
+        - death toll
+        - death toll completed
+        - derivative completed
+        - derivative smoothed up
+        - derivative maxima and minima
+        - vertical line showing last day of pandemic
+        - moving vertical line to help see derivative - death toll relation
+
+    Based on example from:
+    https://stackoverflow.com/questions/9401658/how-to-animate-a-scatter-plot
+    """
+    
+    def __init__(self, start_days: dict, voivodeship: str, fps=50):
+        
+        self.start_days = start_days
+        self.voivodeship = voivodeship
+        
+        self.days = Config.days_to_look_for_pandemic_end
+        self.derivative_half_win_size = Config.death_toll_derivative_half_win_size
+        self.derivative_smooth_out_win_size = Config.death_toll_derivative_smooth_out_win_size
+        self.derivative_smooth_out_polyorder = Config.death_toll_derivative_smooth_out_savgol_polyorder
+        
+        # Setup the figure and axes...
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
+        self.ax2 = self.ax.twinx()
+        
+        # Then setup FuncAnimation.
+        self.ani = FuncAnimation(self.fig, self.update, interval=1000 / fps,
+                                 init_func=self.setup_plot, frames=self.days,
+                                 blit=True, repeat=True)
+        
+        self.axvline = None
+    
+    def setup_plot(self):
+        """Initial drawing of plots."""
+        
+        # For some odd reason setup_plot is called twice which duplicates lines
+        # and legend entries, so I just clear axes before doing anything.
+        self.ax2.clear()
+        self.ax.clear()
+        
+        self.ax.set_xlabel('t, days')
+        self.ax.set_ylabel('Death toll')
+        self.ax2.set_ylabel('Normalized derivative of death toll')
+        
+        self.ax.set_title(self.voivodeship)
+        
+        # get  last day of pandemic
+        last_days = RealData.get_ending_days_for_voivodeships_based_on_death_toll_derivative(
+            starting_days=self.start_days,
+            days_to_search=self.days,
+            derivative_half_win_size=self.derivative_half_win_size,
+            derivative_smooth_out_win_size=self.derivative_smooth_out_win_size,
+            derivative_smooth_out_polyorder=self.derivative_smooth_out_polyorder
+        )
+        start_day = self.start_days[self.voivodeship]
+        last_day = last_days[self.voivodeship]
+        
+        print(f'start={start_day}, end={last_day}')
+        
+        # plot death toll segment
+        death_toll = np.array((RealData.get_real_death_toll().loc[self.voivodeship])).astype(float)
+        death_toll_segment = np.copy(death_toll[start_day: start_day + self.days])
+        self.ax.plot(death_toll_segment, color='C0', zorder=1, label='death toll',
+                     lw=4, alpha=0.7)
+        
+        # plot missing death toll segments approximated
+        death_toll_completed = complete_missing_data(values=death_toll)
+        missing_indices = get_indices_of_missing_data(data=death_toll)
+        for i, indices in enumerate(missing_indices):
+            
+            idx_min = indices[0] - 1
+            idx_max = indices[-1] + 2
+            
+            idx_min = max(0, idx_min - start_day)
+            idx_max = min(self.days, idx_max - start_day)
+            
+            if idx_min < self.days:
+                # plot with legend only first segment
+                if i == 0:
+                    self.ax.plot(range(idx_min, idx_max),
+                                 death_toll_completed[start_day + idx_min: start_day + idx_max],
+                                 color='black', lw=4, alpha=0.7, label='death toll interpolated')
+                else:
+                    self.ax.plot(range(idx_min, idx_max),
+                                 death_toll_completed[start_day + idx_min: start_day + idx_max],
+                                 color='black', lw=4, alpha=0.7)
+        
+        # # plot window derivative completed
+        derivative_completed = window_derivative(
+            y=death_toll_completed,
+            half_win_size=self.derivative_half_win_size)
+        derivative_completed_segment = np.copy(derivative_completed[start_day: start_day + self.days])
+        derivative_completed_segment /= max(derivative_completed_segment)
+        self.ax2.plot(derivative_completed_segment, color='C1', label='window derivative')
+        
+        # plot smooth out derivative completed
+        yhat = savgol_filter(
+            derivative_completed_segment,
+            window_length=self.derivative_smooth_out_win_size,
+            polyorder=self.derivative_smooth_out_polyorder
+        )
+        yhat /= max(yhat)
+        self.ax2.plot(yhat, color='C2', label=f'derivative smoothed up', lw=4)
+        
+        # Plot peaks (minima and maxima) of smoothed up derivative.
+        vec = np.copy(yhat)
+        
+        # Maxima
+        x_peaks_max = argrelmax(data=vec, order=7)[0]
+        self.ax2.scatter(x_peaks_max, vec[x_peaks_max], label='derivative maxima',
+                         color='lime', s=140, zorder=100)
+        # Minima
+        x_peaks_min = argrelmin(data=vec, order=7)[0]
+        self.ax2.scatter(x_peaks_min, vec[x_peaks_min], label='derivative minima',
+                         color='darkgreen', s=140, zorder=100)
+        
+        # plot last day of initial pandemic phase
+        self.axvline = self.ax2.axvline(last_day - start_day, color='red', lw=3, label='last day')
+        
+        # add legend (change y2 limits to avoid plots overlapping with legend)
+        self.ax2.set_ylim(-0.05, 1.2)
+        self.fig.legend(
+            loc="upper center",
+            ncol=4,
+            bbox_to_anchor=(0.5, 1),
+            bbox_transform=self.ax.transAxes,
+            fancybox=True,
+            shadow=True)
+        
+        # plot moving axvline to easily show death toll - derivative relation
+        self.axvline = self.ax.axvline(x=0, animated=True, color='black', lw=2)
+        
+        plt.tight_layout()
+        
+        # For FuncAnimation's sake, we need to return the artist we'll be using
+        # Note that it expects a sequence of artists, thus the trailing comma.
+        return self.axvline,
+    
+    def update(self, i):
+        """Update the vertical line."""
+        self.axvline.set_xdata(i % self.days)
+        
+        # We need to return the updated artist for FuncAnimation to draw..
+        # Note that it expects a sequence of artists, thus the trailing comma.
+        return self.axvline,
+    
+    @staticmethod
+    def make_animations(voivodeships: list,
+                        fps=50,
+                        start_days_by='deaths',
+                        show=True,
+                        save=False):
+        if 'all' in voivodeships:
+            voivodeships = RealData.get_voivodeships()
+        
+        if start_days_by == 'deaths':
+            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
+                percent_of_touched_counties=Config.percent_of_death_counties,
+                ignore_healthy_counties=True)
+        elif start_days_by == 'infections':
+            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
+                percent_of_touched_counties=Config.percent_of_infected_counties)
+        else:
+            raise ValueError(f'start_days_by has to be "deaths" or "infections", but {start_days_by} was given')
+        
+        for voivodeship in voivodeships:
+            a = FindLastDayAnim(
+                start_days=start_days,
+                voivodeship=voivodeship,
+                fps=fps)
+            
+            if show:
+                plt.show()
+            
+            if save:
+                save_dir = f"{Config.ABM_dir}/RESULTS/plots/Finding last day of pandemic/"
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                fname = (f"{save_dir}{voivodeship} start_by{start_days_by} in "
+                         f"{Config.percent_of_death_counties if start_days_by == 'deaths' else Config.percent_of_infected_counties}"
+                         f" percent of counties.gif")
+                a.ani.save(fname,
+                           writer='pillow',
+                           fps=fps)
+                print(f'{voivodeship} {fps} saved')
+
+
 class UnusedPlots(object):
     def __init__(self):
         pass
@@ -579,3 +769,234 @@ class UnusedPlots(object):
             raise ValueError(f'Not found any data for const mortality = {const_beta} in {directory}')
     
         return result
+
+    @classmethod
+    def show_real_death_toll_for_voivodeship_shifted_by_hand(cls,
+                                                             directory_to_data,
+                                                             voivodeship,
+                                                             starting_day=10,
+                                                             last_day=100,
+                                                             shift_simulated=True,
+                                                             save=False,
+                                                             show=True):
+        """
+        Plots real death toll for one voivodeship, but shifted in a way, that in day = starting_day
+        it looks like pandemic started for good.
+
+        Simulated data are also plotted to visually verify if parameters of simulation are correct.
+        Simulated data are shifted, but in a way that in day=starting_day simulated death toll
+        equal real shifted death toll.
+
+        Intended to use with directory_to_data != None; to see similarity in real and
+        simulated data.
+
+        :param directory_to_data: folder which contain simulation result which will be compared to real data.
+        :type directory_to_data: None or str
+        :param voivodeship: name of voivodeship from which real data comes from.
+        :type voivodeship: str
+        :param starting_day: first day afer shift for which death toll is above threshold which was estimated by hand
+        :type starting_day: int
+        :param last_day: last day for which data will be plotted
+        :type last_day: int
+        :param shift_simulated: shift simulated death toll in the same way as real (same death toll threshold)?
+        :type shift_simulated: bool
+        :param save: save plot?
+        :type save: bool
+        :param show: show plot?
+        :type show: bool
+        """
+    
+        # get starting death toll for given voivodeship since from (by hand) death toll looks nicely
+        starting_death = RealData.get_starting_deaths_by_hand()[voivodeship]
+    
+        # get real death toll for all voivodeships, shifted such in starting_day each voivodeship has starting deaths
+        shifted_real_death_toll = \
+            RealData.get_shifted_real_death_toll_to_common_start_by_num_of_deaths(starting_day=starting_day,
+                                                                                  minimum_deaths=starting_death)
+        # get day number in which death toll = starting_death
+        true_start_day = RealData.get_day_of_first_n_death(n=starting_death)
+    
+        # Plot data for given voivodeship *****************************************************************************
+        # set figure, title and axis labels
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111)
+        ax.set_title(f"Death toll for {voivodeship}, shifted in such a way, that in day {starting_day} "
+                     f"death toll is not less than {starting_death}.\n")
+        if directory_to_data is not None and shift_simulated:
+            ax.set_title(ax.get_title() + 'Simulated death toll is shifted as well.')
+        ax.set_xlabel(f't, days since first {starting_death} people died in given voivodeship')
+        ax.set_ylabel(f'Death toll (since first {starting_death} people died in given voivodeship)')
+    
+        # set data
+        x = shifted_real_death_toll.columns  # x = days of pandemic = [0, 1, ...]
+        y = shifted_real_death_toll.loc[voivodeship]
+    
+        # make nice looking label
+        left = voivodeship
+        right = f"day {starting_day} = {true_start_day[voivodeship]}"
+        label = '{:<20} {:>22}'.format(left, right)
+    
+        # plot shifted real data
+        ax.plot(x[:last_day], y[:last_day], label=label, color='Black', linewidth=3)
+        # ************************************************************************************************************
+    
+        # Plot data from simulations **********************************************************************************
+        if directory_to_data:
+            fnames = all_fnames_from_dir(directory=directory_to_data)
+        
+            num_of_lines = len(fnames)
+            cmap = plt.get_cmap('viridis')
+            colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
+        
+            for i, fname in enumerate(fnames):
+                beta = float(variable_params_from_fname(fname=fname)[r'$\beta$'])
+                mortality = float(variable_params_from_fname(fname=fname)['mortality'])
+                visibility = float(variable_params_from_fname(fname=fname)['visibility'])
+            
+                df = pd.read_csv(fname)
+            
+                # decide if also shift simulated data
+                common_day = 0
+                if shift_simulated:
+                    y = np.array(df['Dead people'])
+                    common_day = np.where(y >= starting_death)[0][0]
+                    y = y[common_day - starting_day:]
+                    x = list(range(len(y)))
+                else:
+                    x = df['Day']
+                    y = df['Dead people']
+            
+                # prepare label ingredients
+                beta_info = r'$\beta$=' + f'{beta}'
+                mortality_info = f'mortality={mortality * 100:.1f}%'
+                visibility_info = f'visibility={visibility * 100:.0f}%'
+                day_info = f"day {starting_day}=0"
+                if shift_simulated:
+                    day_info = f"day {starting_day}={common_day}"
+            
+                # create label for simulated data
+                label = '{:<10} {:>15} {:>15} {:>10}'.format(beta_info,
+                                                             mortality_info,
+                                                             visibility_info,
+                                                             day_info)
+            
+                # plot simulated data
+                ax.plot(x[:last_day], y[:last_day], label=label, color=colors[i],
+                        linewidth=1, linestyle='dashed')
+            # ************************************************************************************************************
+    
+        # made legend and its entries nicely aligned
+        ax.legend(prop={'family': 'monospace'}, loc='upper left')
+        plt.tight_layout()
+    
+        cls.__show_and_save(fig=fig, dir_to_data=directory_to_data,
+                            plot_type='Real shifted death toll up to threshold',
+                            plot_name=f'starting_deaths={starting_death},   '
+                                      f'starting_day={starting_day},   '
+                                      f'last_day={last_day}',
+                            save=save,
+                            show=show)
+
+    @classmethod
+    def get_ending_days_by_derivative_of_smooth_death_toll(
+            cls,
+            starting_days: dict,
+            days_to_search=200,
+            death_toll_smooth_out_win_size=21,
+            death_toll_smooth_out_polyorder=3,
+            derivative_half_win_size=3,
+    ):
+        """
+        Returns last day of first phase of pandemic.
+
+        Last day is found as day between max delta peak_up - peak_down of
+        death toll derivative.
+
+        Algorithm:
+            - get death toll and fill missing data in it
+            - calculate window derivative of death toll
+            - smooth up derivative
+            - find peaks in derivative (up and down)
+            - find two neighbouring peaks with max delta_y value
+            - last day = avg(peak1_x peak2_x)
+
+        :param starting_days: days considered as the beginning of pandemic
+            for all voivodeships {voivodeship: start_day}
+        :type starting_days: dict
+        :param days_to_search: number of days since start_day where
+            the last day will be searched for
+        :type days_to_search: int
+        :param derivative_half_win_size: half window size of death toll
+            derivative e.g. val=3 --> 7 days.
+            E.g. (2) data = [0, 10, 20, 30, 40, 50], val=1 -->
+                derivative[2] = (30-10)/(idx(30) - idx(10)) = 20/(3-1) = 20/2 = 10
+        :type derivative_half_win_size: int
+        :param death_toll_smooth_out_win_size: window size used for smooth up
+            death_toll in savgol_filter.
+        :type death_toll_smooth_out_win_size: int
+        :param death_toll_smooth_out_polyorder: polyorder used for smooth up
+            death_toll in savgol_filter.
+        :type death_toll_smooth_out_polyorder: int
+        :return: dict {voivodeship: last_day_of_pandemic} for all voivodeships.
+        :rtype: dict
+
+        """
+    
+        # create empty result dict
+        result = {}
+    
+        # get real death toll for all voivodeships (since 03.04.2019)
+        death_tolls = RealData.get_real_death_toll()
+    
+        # fill gaps in real death toll
+        for voivodeship in cls.get_voivodeships():
+            death_tolls.loc[voivodeship] = complete_missing_data(values=death_tolls.loc[voivodeship])
+    
+        # smooth out death toll
+        death_tolls_smooth = death_tolls.copy()
+        for voivodeship in cls.get_voivodeships():
+            death_tolls_smooth.loc[voivodeship] = savgol_filter(
+                x=death_tolls.loc[voivodeship],
+                window_length=death_toll_smooth_out_win_size,
+                polyorder=death_toll_smooth_out_polyorder)
+    
+        # algorithm to find last day of pandemic for each voivodeship
+        for voivodeship in cls.get_voivodeships():
+            # get start day based on percent counties dead
+            start_day = starting_days[voivodeship]
+        
+            # get derivative
+            derivative = window_derivative(
+                y=death_tolls_smooth.loc[voivodeship],
+                half_win_size=derivative_half_win_size)
+        
+            # get just segment of this derivative which probably includes last day of
+            # first phase of pandemic, it will be plotted
+            derivative_segment = derivative[start_day: start_day + days_to_search]
+        
+            # normalize derivative to 1
+            derivative_segment /= max(derivative_segment)
+        
+            # Find x pos of maxima
+            x_peaks_max = argrelmax(data=derivative_segment, order=7)[0]
+            # Find x pos of minima
+            x_peaks_min = argrelmin(data=derivative_segment, order=7)[0]
+        
+            # make one sorted array of x coordinate of all found extremes
+            x_extremes = np.sort(np.array([*x_peaks_max, *x_peaks_min]))
+            # get indices of two neighbouring peaks with max delta val (from list of all peaks)
+            idx1, idx2 = cls._get_neighbouring_indices_with_max_delta_value(data=derivative_segment[x_extremes])
+            # get number of days where two neighbouring peaks, with max delta value, occurred
+            # (since starting day)
+            idx1, idx2 = x_extremes[[idx1, idx2]]
+        
+            # get day number where initial phase of death toll ends (since start day)
+            idx_death_toll_change = int(np.average([idx1, idx2]))
+        
+            # add last day of first phase of pandemic (since 04.03.2019)
+            # to resulting dictionary
+            result[voivodeship] = idx_death_toll_change + start_day
+    
+        return result
+
+

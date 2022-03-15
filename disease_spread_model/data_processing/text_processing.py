@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from disease_spread_model.names import TRANSLATE
+
 
 def get_list_of_tuples_from_dir(directory):
     fnames = all_fnames_from_dir(directory=directory)
@@ -34,53 +36,44 @@ def group_tuples_by_start(list_of_tuples, start_length):
     return result
 
 
+def fname_to_list(fname):
+    
+    fname = os.path.split(fname)[1]
+    
+    # convert fname to list like ['Beta=0.036', ...]
+    if '___' in fname:
+        fname_splitted = fname.split('___')[1:]
+    elif '__' in fname:
+        fname_splitted = fname.split('__')[1:]
+    else:
+        raise NotImplementedError
+
+    # remove '.csv' from last elem
+    if fname_splitted[-1][-4:] == '.csv':
+        fname_splitted[-1] = fname_splitted[-1][:-4]
+
+    return fname_splitted
+
+
 def variable_params_from_fname(fname):
     # fname = 'blah blah bla/.../results/Grid_size=(1, 1)/Id=0___N=700___Beta_mortality_pair=(0.03, 0).csv'
+    # fname = 'blah blah bla/.../results/g_size=(1, 1)/Id=0___N=700___b=0.03.csv'
     
-    new = fname
-    while '/' in new:
-        new = new[new.find('/') + 1:]
-    new = new[: new.find('.csv')]
-    
-    new_list = new.split(sep='___')
-    new_new_list = []
-    for i, param in enumerate(new_list):
-        if 'Id=' in param:
-            pass
-        
-        elif 'Beta_mortality_pair=' in param:
-            beta = float(param[param.find('=(') + 2: param.find(', ')])
-            mortality = float(param[param.find(', ') + 2: param.find(')')])
-            
-            new_new_list.append(f'beta={beta}')
-            new_new_list.append(f'mortality={mortality}')
-        
-        elif 'Grid_size=' in param:
-            new_new_list.append(new_list[i].replace("Grid_size=", "Grid size="))
-        
-        elif 'Infect_housemates_boolean=' in param:
-            new_new_list.append(new_list[i].replace("Infect_housemates_boolean=", "Infect housemates="))
-        
-        else:
-            new_new_list.append(new_list[i])
-    
+    fname_splitted = fname_to_list(fname)
     my_dict = {}
-    for param in new_new_list:
-        key = param[: param.find('=')]
-        if key == 'beta':
-            key = r'$\beta$'
-        elif key == 'N':
-            pass
-        else:
-            key = key.lower()
-        val = param[param.find('=') + 1:]
-        my_dict[key] = val
+    for elem in fname_splitted:
+        key, value = elem.split('=')
+        if key != 'Id':
+            my_dict[key] = value
+    
+    if 'Beta_mortality_pair' in my_dict:
+        b_m = my_dict.pop('Beta_mortality_pair')
+        b = b_m[1: b_m.find(', ')]
+        m = b_m[b_m.find(', ')+2: -1]
         
-        # Sometimes using 'beta' is more convenient than r'$\beta$' so add them both.
-        if key == r'$\beta$':
-            my_dict['beta'] = val
-            
-    return my_dict
+        my_dict['beta'], my_dict['mortality'] = b, m
+    
+    return TRANSLATE.to_short(my_dict)
 
 
 def fixed_params_from_fname(fname):
@@ -139,7 +132,7 @@ def voivodeship_from_fname(fname):
     """
 
     # needs to be imported here, otherwise circular import error
-    from real_data import RealData
+    from disease_spread_model.data_processing.real_data import RealData
     
     # infinite loop protection
     i = 0
@@ -158,9 +151,11 @@ def voivodeship_from_fname(fname):
 
 
 def all_fnames_from_dir(directory):
+    if not Path(directory).exists():
+        raise FileNotFoundError(directory)
+    
     fnames = []
     cwd = os.getcwd()
-    Path(directory).mkdir(parents=True, exist_ok=True)
     os.chdir(directory)
     for file in glob.glob("*.*"):
         fnames.append(directory + file)
@@ -323,6 +318,8 @@ def group_fnames_by_param1_param2_param3(directory: str,
                 result[1:, :, :]
                 
     """
+    # Convert param names to current naming convention
+    param1, param2, param3 = TRANSLATE.to_short([param1, param2, param3])
     
     # Prepare dicts for containing {paramX_occurrenceNumber: paramX_value}
     params1_vals_to_index = {}
@@ -407,13 +404,16 @@ def check_uniqueness_and_correctness_of_params(param1: str,
                                                param3: str):
     """
     Raises an ValueError if passed params are not unique elements
-    of list ['beta', 'mortality', 'visibility'].
+    of list ['beta', 'mortality', 'visibility'] or ['b', 'm', 'v'].
     """
     
     allowed_params = ['beta', 'mortality', 'visibility']
     
     are_params_allowed = all([param in allowed_params
                               for param in [param1, param2, param3]])
+    if not are_params_allowed:
+        are_params_allowed = all([param in TRANSLATE.to_short(allowed_params)
+                                  for param in [param1, param2, param3]])
     
     are_params_unique = len([param1, param2, param3]) == len({param1, param2, param3})
     
@@ -435,3 +435,63 @@ def get_last_simulated_day(fname: str):
     """
     df = pd.read_csv(fname)
     return int(max(df['Day']))
+
+
+def dirname_to_dict(dirname):
+    
+    f = ''
+    if '___' in dirname:
+        f = dirname.split('___')
+    elif '__' in dirname:
+        f = dirname.split('__')
+        
+    d = {}
+    for item in f:
+        key, val = item.split('=')
+        d[key] = val
+
+    return d
+
+
+def is_dict1_in_dict2(d1, d2):
+    """Checks if all key value pairs from dict1 are in dict2.
+
+    Note1: dict2 can be bigger than dict1.
+    Note2: for flexibility reasons, for comparison are used modified key, value pairs
+        e.g. key --> str(key).lower(); value --> str(value).lower()
+    """
+
+    d1 = {str(k).lower(): str(v).lower() for k, v in d1.items()}
+    d2 = {str(k).lower(): str(v).lower() for k, v in d2.items()}
+
+    if d1.items() <= d2.items():
+        return True
+    else:
+        return False
+
+
+def find_folder_by_fixed_params(directory: str, params: dict):
+    """Find folder name in ABM/RESULTS that starts with 'Runs=' by
+    passing values like 'N' and/or 'grid_size'.
+    
+    Return full str(path) to opened folder like:
+    'C/users/.../ABM/RESULTS/Runs=5___Grid_size=(20, 20)/'
+    """
+    
+    # get list of folders staring with 'Runs='
+    folders = os.listdir(directory)
+    folders_Runs = [folder for folder in folders if 'Runs=' in folder]
+    
+    params = TRANSLATE.to_short(params)
+    
+    for folder in folders_Runs:
+        folder_dict = dirname_to_dict(folder)
+        folder_dict = TRANSLATE.to_short(folder_dict)
+        
+        if is_dict1_in_dict2(d1=params, d2=folder_dict):
+            return directory + folder + '/'
+    raise FileNotFoundError
+
+
+
+    

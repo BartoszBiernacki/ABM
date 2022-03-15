@@ -3,6 +3,7 @@ import shutil
 from .real_data import RealData
 from .text_processing import *
 from disease_spread_model.config import Config
+from disease_spread_model.names import TRANSLATE
 
 
 class Results(object):
@@ -21,13 +22,13 @@ class Results(object):
         """
         fnames = all_fnames_from_dir(directory=not_avg_data_directory)
         unique_tuples = get_list_of_tuples_from_dir(directory=not_avg_data_directory)
-    
+        
         data_collector_single_results = {}
         for i, fname in enumerate(fnames):
             data_collector_single_results[unique_tuples[i]] = pd.read_pickle(fname)
-    
+        
         return data_collector_single_results
-
+    
     @classmethod
     def get_avg_results(cls,
                         variable_params,
@@ -69,7 +70,7 @@ class Results(object):
                     incubation_cashiers = df['Incubation cashiers'][last_idx]
                     prodromal_cashiers = df['Prodromal cashiers'][last_idx]
                     
-                    if incubation_people + prodromal_people + illness_people +\
+                    if incubation_people + prodromal_people + illness_people + \
                             incubation_cashiers + prodromal_cashiers != 0:
                         lis.append(df)  # list of results dataframes matching key_tuple=(5, 2, 2)
                 else:
@@ -83,9 +84,9 @@ class Results(object):
                 df.columns = data_collector_model_results[list_of_tuples[0]].columns
                 
                 result[key] = df
-    
+        
         return result
-
+    
     @classmethod
     def save_avg_results(cls,
                          avg_results,
@@ -103,13 +104,13 @@ class Results(object):
             variable parameters as in key.
         :type avg_results: dictionary
         :param fixed_params: fixed_params passed to run the model.
-        :type fixed_params: dictionary
+        :type fixed_params: dict
         :param variable_params: variable_params passed to run the model.
         :type variable_params: dictionary
         :param runs: number of simulation iterations for given set of parameters.
         :type runs: integer.
         :param base_params: names of model parameters which values will be included in resulting folder name.
-        :type base_params: list
+        :type base_params: tuple(str)
         :param include_voivodeship: include voivodeship in folder name if number of households in simulation matches
             number of households in some voivodeship?
         :type include_voivodeship: boolean
@@ -117,33 +118,59 @@ class Results(object):
         :return: directory to saved data
         :rtype: string
         """
-    
+        
+        # merge all params in one dict
         all_params = {**fixed_params, **variable_params}
+       
+        # shorten names of params
+        variable_params = TRANSLATE.to_short(variable_params)
+        base_params = TRANSLATE.to_short(list(base_params))
+        all_params = TRANSLATE.to_short(all_params)
+        
         save_dir = Config.AVG_SAVE_DIR
         
+        # Append dir 'voivodeship_name' to dir if N simulated matches any of them
         if include_voivodeship:
-            if 'N' in all_params.keys():
-                N = all_params['N']
-        
+            if TRANSLATE.to_short('N') in all_params:
+                N = all_params[TRANSLATE.to_short('N')]
+                
                 real_general_data = RealData.get_real_general_data()
                 
                 # if N simulated matches N from real data, named folder as voivodeship name
                 if np.sum(real_general_data['N MODEL'] == N) == 1:
                     voivodeship = real_general_data.index[real_general_data['N MODEL'] == N].tolist()[0]
                     save_dir += voivodeship.capitalize() + '/'
-                
+        
+        # Append info about param values to dir like 'Runs=10___Grid_size=(20, 20)___...'
         if base_params:
-            dir_name = f'Runs={runs}___'
+            dir_name = f'Runs={runs}__'
             for param, val in all_params.items():
                 if param in base_params:
                     try:
-                        dir_name += param.capitalize() + '=' + str(round(val, 3)) + '___'
+                        dir_name += param + '=' + str(round(val, 3)) + '__'
                     except TypeError:
                         tuple_val = tuple([round(x, 3) for x in val])
-                        dir_name += param.capitalize() + '=' + str(tuple_val) + '___'
+                        dir_name += param + '=' + str(tuple_val) + '__'
             
-            dir_name = dir_name[: -3]
-            save_dir += dir_name + '/'
+            dir_name = dir_name[: -2]  # ignore last two underscores
+            
+            # Don't create new folder if there is no need for it ------------
+            folder_ok = True
+            try:
+                folder = find_folder_by_fixed_params(
+                    directory=Config.AVG_SAVE_DIR,
+                    params=dirname_to_dict(dirname=dir_name))
+            except FileNotFoundError:
+                folder_ok = False
+                folder = 'ERROR_FOLDER'
+            
+            if os.path.split(save_dir[:-1])[1] == 'RESULTS' and folder_ok:
+                save_dir = folder
+            else:
+                save_dir += dir_name + '/'
+            # ---------------------------------------------------------------
+            
+            # Append 'raw_data' to path
             save_dir += 'raw data/'
         
         Path(save_dir).mkdir(parents=True, exist_ok=True)
@@ -157,17 +184,18 @@ class Results(object):
         for tuple_key, df in avg_results.items():
             fname = f'Id={str(file_id).zfill(4)}'
             for param, val in zip(variable_params, tuple_key):
+                # param vals are only floats or tuples of floats
                 try:
-                    fname += '___' + param.capitalize() + '=' + str(round(val, 4))
+                    fname += '__' + param + '=' + str(round(val, 4))
                 except TypeError:
                     tuple_val = tuple([round(x, 3) for x in val])
-                    fname += '___' + param.capitalize() + '=' + str(tuple_val)
+                    fname += '__' + param + '=' + str(tuple_val)
             
             df.to_csv(path_or_buf=save_dir + fname + '.csv', index=False)
             file_id += 1
-            
-        return save_dir
         
+        return save_dir
+    
     @classmethod
     def remove_tmp_results(cls):
         try:

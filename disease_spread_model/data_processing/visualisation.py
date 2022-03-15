@@ -1,9 +1,20 @@
 """Making all kind of plots to visualize real, simulated or both data."""
 import datetime
 
+from typing import Union
+
+import matplotlib
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.cm as cm
+from matplotlib.gridspec import GridSpec
+from matplotlib import colors as mColors
+import seaborn as sns
+
+from adjustText import adjust_text
+from labellines import labelLines
+
 from scipy.signal import savgol_filter
 from scipy.signal import argrelmax
 from scipy.signal import argrelmin
@@ -14,6 +25,7 @@ from disease_spread_model.data_processing.real_data import RealData
 from disease_spread_model.model.model_adjustment import TuningModelParams
 
 from disease_spread_model.config import Config
+from disease_spread_model.dirs_to_plot import FolderParams
 from disease_spread_model.model.my_math_utils import *
 
 
@@ -285,7 +297,7 @@ class RealVisualisation(object):
                 colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
                 
                 for i, fname in enumerate(fnames):
-                    beta = float(variable_params_from_fname(fname=fname)[r'$\beta$'])
+                    beta = float(variable_params_from_fname(fname=fname)['beta'])
                     mortality = float(variable_params_from_fname(fname=fname)['mortality'])
                     visibility = float(variable_params_from_fname(fname=fname)['visibility'])
                     
@@ -363,14 +375,15 @@ class RealVisualisation(object):
         ax.set_ylabel(f'Day number since 04-03-2020 which is considered to be the beginning of a pandemic')
         
         # get starting day of pandemic by percent of touched counties
-        starting_days_deaths = \
-            RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_death_counties,
-                ignore_healthy_counties=False)
+        starting_days_deaths = RealData.starting_days(
+            by='deaths',
+            percent_of_touched_counties=percent_of_death_counties,
+            ignore_healthy_counties=False)
         
-        starting_days_infections = \
-            RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-                percent_of_touched_counties=percent_of_infected_counties)
+        starting_days_infections = RealData.starting_days(
+            by='infections',
+            percent_of_touched_counties=percent_of_infected_counties,
+            ignore_healthy_counties=False)
         
         # get voivodeships and used them to synchronize plots
         voivodeships_synchro = starting_days_infections.keys()
@@ -390,7 +403,7 @@ class RealVisualisation(object):
                      color=color_deaths, linestyle='-.', marker='o', mec='black',
                      label=(f'Starting day by {percent_of_death_counties}% of counties with '
                             f'at least one death case.'))
-    
+        
         # set y_lim to 0
         ax.set_ylim([-5, None])
         
@@ -418,7 +431,7 @@ class RealVisualisation(object):
             y_label2 = '(Death toll / population) ' r'$\cdot 10^5$'
             population = RealData.get_real_general_data()['population']
             # preserve order of voivodeship on X axis
-
+            
             p3 = ax2.scatter(voivodeships_synchro,
                              [starting_death_toll_infections[voivodeship] / population[voivodeship] * (10 ** 5)
                               for voivodeship in voivodeships_synchro],
@@ -450,7 +463,7 @@ class RealVisualisation(object):
                              marker='s',
                              edgecolors='black',
                              label=lab_death_toll_deaths)
-            
+        
         # set y2 axis label
         ax2.set_ylabel(y_label2)
         # ***********************************************************************************************************
@@ -470,7 +483,7 @@ class RealVisualisation(object):
                                        f'normalize_by_population={normalize_by_population}'),
                             save=save,
                             show=show)
-
+    
     @classmethod
     def plot_last_day_finding_process(cls,
                                       voivodeships: list[str],
@@ -496,29 +509,24 @@ class RealVisualisation(object):
          - slope of death toll
          - slope of smoothed up death toll
         """
-
+        
         # get voivodeships
         if 'all' in voivodeships:
             voivodeships = RealData.get_voivodeships()
-
+        
         # get start days dict
-        if start_days_by == 'deaths':
-            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_touched_counties,
-                ignore_healthy_counties=True)
-        elif start_days_by == 'infections':
-            start_days = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-                percent_of_touched_counties=percent_of_touched_counties)
-        else:
-            raise ValueError(f'start_days_by has to be "deaths" or "infections", but {start_days_by} was given')
-
+        start_days = RealData.starting_days(
+            by=start_days_by,
+            percent_of_touched_counties=percent_of_touched_counties,
+            ignore_healthy_counties=False)
+        
         # get real death toll for all voivodeships (since 03.04.2019)
         death_tolls = RealData.get_real_death_toll()
-
+        
         # fill gaps in real death toll
         for voivodeship in RealData.get_voivodeships():
             death_tolls.loc[voivodeship] = complete_missing_data(values=death_tolls.loc[voivodeship])
-
+        
         # smooth out death toll
         death_tolls_smooth = death_tolls.copy()
         for voivodeship in RealData.get_voivodeships():
@@ -526,15 +534,15 @@ class RealVisualisation(object):
                 x=death_tolls.loc[voivodeship],
                 window_length=death_toll_smooth_out_win_size,
                 polyorder=death_toll_smooth_out_polyorder)
-
+        
         # get last day in which death pandemic last day will be looked for
         last_day_to_search = list(death_tolls.columns).index(last_date)
-
+        
         # Make plots
         for voivodeship in voivodeships:
             fig, ax = plt.subplots(figsize=(12, 8))
             ax2 = ax.twinx()
-    
+            
             # set title and axis labels
             date0 = (datetime.datetime(2020, 3, 4) +
                      datetime.timedelta(days=int(start_days[voivodeship])))
@@ -547,20 +555,20 @@ class RealVisualisation(object):
             ax.set_xlabel('t, dni')
             ax.set_ylabel('Suma zgonów')
             ax2.set_ylabel('Przeskalowana pochodna lub nachylenie sumy zgonów')
-    
+            
             day0 = start_days[voivodeship]
             x_days = np.arange(-10, last_day_to_search - day0)
-    
+            
             # death toll
             death_toll = death_tolls.loc[voivodeship]
             ax.plot(x_days, death_toll[day0 - 10: last_day_to_search],
                     color='C0', label='suma zgonów', lw=4, alpha=0.7)
-    
+            
             # death toll smoothed up
             death_toll_smooth = death_tolls_smooth.loc[voivodeship]
             ax.plot(x_days, death_toll_smooth[day0 - 10: last_day_to_search],
                     color='C1', label='suma zgonów po wygładzeniu')
-    
+            
             if plot_redundant:
                 # derivative
                 derivative = window_derivative(
@@ -568,7 +576,7 @@ class RealVisualisation(object):
                     half_win_size=derivative_half_win_size)
                 ax2.plot(derivative[day0 - 10: last_day_to_search],
                          color='C2', label='pochodna sumy zgonów', alpha=0.5)
-        
+                
                 # smoothed up derivative
                 derivative_smoothed_up = savgol_filter(
                     x=derivative,
@@ -577,7 +585,7 @@ class RealVisualisation(object):
                 ax2.plot(derivative_smoothed_up[day0 - 10: last_day_to_search],
                          color='black', label='wygładzona pochodna sumy zgonów',
                          alpha=1, lw=10)
-        
+                
                 # derivative of smooth death toll
                 derivative_smooth = window_derivative(
                     y=death_toll_smooth,
@@ -585,7 +593,7 @@ class RealVisualisation(object):
                 ax2.plot(derivative_smooth[day0 - 10: last_day_to_search],
                          color='C3', lw=2,
                          label='pochodna wygładzonej sumy zgonów')
-        
+                
                 # smoothed up derivative of smooth death toll
                 derivative_smooth_smoothed_up = savgol_filter(
                     x=derivative_smooth,
@@ -594,14 +602,14 @@ class RealVisualisation(object):
                 ax2.plot(derivative_smooth_smoothed_up[day0 - 10: last_day_to_search],
                          color='yellow', lw=4,
                          label='wygładzona pochodna wygładzonej sumy zgonów')
-        
+                
                 # slope
                 slope = slope_from_linear_fit(data=death_toll, half_win_size=3)
                 ax2.plot(slope[day0 - 10: last_day_to_search],
                          color='C5', alpha=0.5,
                          label='nachylenie prostej dopasowanej do'
                                ' fragmentów sumy zgonów')
-    
+            
             # slope of smooth death toll
             slope_smooth = slope_from_linear_fit(
                 data=death_toll_smooth, half_win_size=3)
@@ -609,16 +617,16 @@ class RealVisualisation(object):
             # normalize slope to 1
             if max(slope_smooth[day0 - 10: last_day_to_search]) > 0:
                 slope_smooth /= max(slope_smooth[day0 - 10: last_day_to_search])
-                
+            
             # plot normalized slope
             ax2.plot(slope_smooth[day0 - 10: last_day_to_search],
                      color='green', lw=4,
                      label='nachylenie prostej dopasowanej do'
                            ' fragmentów wygładzonej sumy zgonów')
-    
+            
             # Plot peaks (minima and maxima) of slope of smoothed up death toll.
             vec = np.copy(slope_smooth[day0 - 10: last_day_to_search])
-    
+            
             # Maxima of slope
             x_peaks_max = argrelmax(data=vec, order=8)[0]
             ax2.scatter(x_peaks_max, vec[x_peaks_max],
@@ -642,17 +650,17 @@ class RealVisualisation(object):
                     last_day_candidates.append(60)
             
             # choose find last day (nearest to 60) from candidates
-            last_day = min(last_day_candidates, key=lambda x: abs(x-60))
+            last_day = min(last_day_candidates, key=lambda x: abs(x - 60))
             
             # plot a line representing last day of pandemic
             ax.axvline(last_day, color='red')
-    
+            
             ymin, ymax = ax.get_ylim()
             ax.set_ylim([0 - ymax * 0.1, ymax * 1.2])
-    
+            
             ymin, ymax = ax2.get_ylim()
             ax2.set_ylim([0 - ymax * 0.1, ymax * 1.2])
-    
+            
             fig.legend(
                 loc="upper center",
                 ncol=2,
@@ -660,7 +668,7 @@ class RealVisualisation(object):
                 bbox_transform=ax.transAxes,
                 fancybox=True,
                 shadow=True)
-
+            
             plt.tight_layout()
             cls.__show_and_save(fig=fig,
                                 plot_type=f'Finding last day of pandemic up to {last_date}',
@@ -669,7 +677,7 @@ class RealVisualisation(object):
                                 save=save,
                                 show=show,
                                 file_format='png')
-
+    
     @classmethod
     def plot_pandemic_time(cls,
                            start_days_by='deaths',
@@ -682,43 +690,38 @@ class RealVisualisation(object):
         """
         Plots first and last day of pandemic for all voivodeships
         since data were collected. Start day can be deduced by percent of
-        death or infected counties. Last day got from slope of feath toll.
+        death or infected counties. Last day got from slope of death toll.
         """
-    
+        
         # make fig and ax
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
-    
+        
         # make ax title and axis labels
         main_info = (f"Days considered as the period of the first phase of the pandemic.\n"
                      f"First day found based on percentage of counties with at least one "
-                     f"{'infection' if start_days_by=='infections' else 'death'} cases "
+                     f"{'infection' if start_days_by == 'infections' else 'death'} cases "
                      f"({percent_of_touched_counties}%)."
                      f" Day 0 is 04-03-2020.")
-    
+        
         ax.set_title(main_info)
         ax.set_xlabel(f'Voivodeship')
         ax.set_ylabel(f'Days of first phase of pandemic')
-    
-        # get starting day of pandemic by percent of touched counties
-        if start_days_by == 'deaths':
-            starting_days = \
-                RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                    percent_of_touched_counties=percent_of_touched_counties,
-                    ignore_healthy_counties=False)
-        else:
-            starting_days = \
-                RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-                    percent_of_touched_counties=percent_of_touched_counties)
-            
+        
+        # get start days dict
+        starting_days = RealData.starting_days(
+            by=start_days_by,
+            percent_of_touched_counties=percent_of_touched_counties,
+            ignore_healthy_counties=False)
+        
         ending_days = RealData.ending_days_by_death_toll_slope(
-            start_days_by=start_days_by,
+            starting_days=start_days_by,
             percent_of_touched_counties=percent_of_touched_counties,
             last_date=last_date,
             death_toll_smooth_out_win_size=death_toll_smooth_out_win_size,
             death_toll_smooth_out_polyorder=death_toll_smooth_out_polyorder,
         )
-    
+        
         # Get dict {voivodeship: pandemic_duration_in_days}
         pandemic_duration = {}
         for voivodeship in starting_days.keys():
@@ -743,14 +746,14 @@ class RealVisualisation(object):
             markerline.set_markersize(15)
             baseline.set_markersize(15)
             stemlines.set_linewidth(6)
-            
+        
         # rotate x labels
         for tick in ax.get_xticklabels():
             tick.set_rotation(45)
-            
+        
         # improve y lower limit
         ax.set_ylim([0, None])
-    
+        
         plt.tight_layout()
         cls.__show_and_save(fig=fig,
                             plot_type='Days of pandemic',
@@ -758,7 +761,7 @@ class RealVisualisation(object):
                                        f'percentage {percent_of_touched_counties}'),
                             save=save,
                             show=show)
-
+    
     @classmethod
     def compare_pandemic_time_by_infections_and_deaths(cls,
                                                        percent_of_deaths_counties=20,
@@ -790,7 +793,7 @@ class RealVisualisation(object):
         :param show: show?
         :type show: bool
         """
-    
+        
         # make fig and ax
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
@@ -798,25 +801,26 @@ class RealVisualisation(object):
         main_info = (f"Summary of designated positions in time of the first stage of the pandemic.\n"
                      f"First day found based on percentage of counties with at least one "
                      f"infection or death case. Day 0 is 04-03-2020")
-    
+        
         ax.set_title(main_info)
         ax.set_xlabel(f'Voivodeship')
         ax.set_ylabel(f'Days of first phase of pandemic')
-
+        
         # get starting day of pandemic by death counties
-        starting_days_by_deaths = \
-            RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_deaths_counties,
-                ignore_healthy_counties=False)
-    
+        starting_days_by_deaths = RealData.starting_days(
+            by='deaths',
+            percent_of_touched_counties=percent_of_deaths_counties,
+            ignore_healthy_counties=False)
+        
         # get starting day of pandemic by infected counties
-        starting_days_by_infections = \
-            RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-                percent_of_touched_counties=percent_of_infected_counties)
-
+        starting_days_by_infections = RealData.starting_days(
+            by='deaths',
+            percent_of_touched_counties=percent_of_infected_counties,
+            ignore_healthy_counties=False)
+        
         ending_days_by_deaths = \
             RealData.ending_days_by_death_toll_slope(
-                start_days_by='deaths',
+                starting_days='deaths',
                 percent_of_touched_counties=percent_of_deaths_counties,
                 last_date=last_date,
                 death_toll_smooth_out_win_size=death_toll_smooth_out_win_size,
@@ -825,17 +829,17 @@ class RealVisualisation(object):
         
         ending_days_by_infections = \
             RealData.ending_days_by_death_toll_slope(
-                start_days_by='infections',
+                starting_days='infections',
                 percent_of_touched_counties=percent_of_infected_counties,
                 last_date=last_date,
                 death_toll_smooth_out_win_size=death_toll_smooth_out_win_size,
                 death_toll_smooth_out_polyorder=death_toll_smooth_out_polyorder,
             )
-    
+        
         # get list of voivodeships to iterate over them while getting pandemic duration
         starting_days_by_infections = sort_dict_by_values(starting_days_by_infections)
         voivodeships_synchro = starting_days_by_infections.keys()
-    
+        
         # prepare plotting colors and transparencies
         color_deaths = 'C0'
         color_infections = 'C1'
@@ -862,15 +866,15 @@ class RealVisualisation(object):
             markerline.set_markersize(15)
             baseline.set_markersize(15)
             stemlines.set_linewidth(6)
-
+            
             markerline.set_color(color_deaths)
             baseline.set_color(color_deaths)
             stemlines.set_color(color_deaths)
-
+            
             markerline.set_alpha(alpha_deaths)
             baseline.set_alpha(alpha_deaths)
             stemlines.set_alpha(alpha_deaths)
-
+            
             # plot pandemic duration by infections
             y_infections_up = ending_days_by_infections[voivodeship]
             y_infections_down = starting_days_by_infections[voivodeship]
@@ -885,11 +889,11 @@ class RealVisualisation(object):
             markerline.set_color(color_infections)
             baseline.set_color(color_infections)
             stemlines.set_color(color_infections)
-
+            
             markerline.set_alpha(alpha_infections)
             baseline.set_alpha(alpha_infections)
             stemlines.set_alpha(alpha_infections)
-
+        
         # manually create legend entries
         deaths_patch = mpatches.Patch(color='None',
                                       label=f'Days found by {percent_of_deaths_counties}% '
@@ -905,18 +909,18 @@ class RealVisualisation(object):
         colors = [color_deaths, color_infections]
         for i, (h, t) in enumerate(zip(leg.legendHandles, leg.get_texts())):
             t.set_color(colors[i])
-
+        
         # remove line/marker symbol from legend (leave only colored description)
-        for i in leg._legend_handle_box.get_children()[0].get_children():   # noqa (suppres warning)
+        for i in leg._legend_handle_box.get_children()[0].get_children():  # noqa (suppres warning)
             i.get_children()[0].set_visible(False)
         
         # rotate x labels (voivodeship names)
         for tick in ax.get_xticklabels():
             tick.set_rotation(45)
-    
+        
         # improve y lower limit
         ax.set_ylim([0, None])
-    
+        
         plt.tight_layout()
         cls.__show_and_save(fig=fig,
                             plot_type='Days of pandemic comparison',
@@ -967,13 +971,16 @@ class SimulatedVisualisation(object):
         pass
     
     @classmethod
-    def __show_and_save(cls, fig, dir_to_data, plot_type, plot_name, save, show):
+    def __show_and_save(cls, fig, plot_type, plot_name, save, show,
+                        dir_to_data=None, save_in_general=False):
         """Function that shows and saves figures
 
         :param fig: figure to be shown/saved
         :type fig: matplotlib figure
         :param dir_to_data: directory to simulated data, used in image output directory
-        :type dir_to_data: str
+        :type dir_to_data: None or str
+        :param save_in_general: save in Result/plots/.. ?
+        :type save_in_general: bool
         :param plot_type: general description of a plot type, each unique type will have it's own folder
         :type plot_type: str
         :param plot_name: detailed name of plot, it will serve as filename
@@ -990,16 +997,30 @@ class SimulatedVisualisation(object):
             if dir_to_data:
                 save_dir = dir_to_data.replace('raw data', 'plots')
                 save_dir += plot_type + '/'
-            else:
-                save_dir = plot_type + '/'
+                
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                plt.savefig(save_dir + plot_name + '.pdf')
             
-            Path(save_dir).mkdir(parents=True, exist_ok=True)
-            plt.savefig(save_dir + plot_name + '.pdf')
+            if save_in_general:
+                save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                plt.savefig(save_dir + plot_name + '.pdf')
         
         if show:
             plt.show()
         
         plt.close(fig)
+    
+    @classmethod
+    def _date_from_day_number(cls, day_number: int) -> str:
+        date0 = datetime.datetime(2020, 3, 4)
+        date0 += datetime.timedelta(days=int(day_number))
+        return date0.strftime('%Y-%m-%d')
+    
+    @classmethod
+    def _day_number_from_date(cls, date: str) -> int:
+        date0 = datetime.datetime(2020, 3, 4)
+        return (datetime.datetime.strptime(date, "%Y-%m-%d") - date0).days
     
     @classmethod
     def plot_stochastic_1D_death_toll_dynamic(cls,
@@ -1035,7 +1056,7 @@ class SimulatedVisualisation(object):
         fnames = all_fnames_from_dir(directory=avg_directory)
         latest_file = max(fnames, key=os.path.getctime)
         variable_params = variable_params_from_fname(fname=latest_file)
-        beta = variable_params['$\\beta$']
+        beta = variable_params[TRANSLATE.to_short('beta')]
         
         # create figure, axes, titles and labels
         fig = plt.figure(figsize=(12, 8))
@@ -1078,7 +1099,7 @@ class SimulatedVisualisation(object):
             DataCollector which data will be plotted. Allowed inputs:
             ['Dead people', 'Infected toll']
         :type model_reporter: str
-        :param parameter: parametr which will be swept (one line for each value)
+        :param parameter: parametr which will be swept (one plot line for each value)
         :type parameter: str
         :param normalized: normalize death toll to 1 in order to see how quickly it saturates?
         :type normalized: bool
@@ -1107,7 +1128,8 @@ class SimulatedVisualisation(object):
         
         # get parameters that will make pairs of fixed values
         # one such pair for one plot
-        possible_params = ['beta', 'mortality', 'visibility']
+        parameter = TRANSLATE.to_short(parameter)
+        possible_params = TRANSLATE.to_short(['beta', 'mortality', 'visibility'])
         possible_params.remove(parameter)
         param2, param3 = possible_params
         
@@ -1283,6 +1305,9 @@ class SimulatedVisualisation(object):
         :param save: save plot?
         :type save: bool
         """
+
+        # Convert param names to current naming convention
+        param1, param2, param3 = TRANSLATE.to_short([param1, param2, param3])
         
         # verify if all model params passed to this function are correct
         check_uniqueness_and_correctness_of_params(param1=param1, param2=param2, param3=param3)
@@ -1414,245 +1439,467 @@ class SimulatedVisualisation(object):
                                 show=show)
     
     @classmethod
-    def __plot_matched_real_death_toll_to_simulated(cls,
-                                                    y1_simulated,
-                                                    y2_real,
-                                                    y2_start=None,
-                                                    y2_end=None,
-                                                    show=True):
-        """
-        Assumes y(x=0) = y[0], y(x=1) = y[1] and so on.
-        Function moves y2 data along X axis to find out for what shift subset of y2 = y2[start: end]
-        best matches subset of the same length of y1. Then plot y1, y2, y2_shifted.
+    def death_toll_for_best_tuned_params(cls,
+                                         last_date='2020-07-01',
+                                         show=True,
+                                         save=True):
+        
+        def plot_matched_real_death_toll_to_simulated(
+                simulated_death_toll: np.ndarray,
+                real_death_toll: Union[pd.Series, np.ndarray],
+                simulated_recovered_toll: np.ndarray,
+                real_recovered_toll: Union[pd.Series, np.ndarray],
+                starting_day: int,
+                ending_day: int,
+                last_date_str: str,
+        ):
+            """
+            Assumes y(x=0) = y[0], y(x=1) = y[1] and so on.
+            Function moves y2 data along X axis to find out for what shift subset of y2 = y2[start: end]
+            best matches subset of the same length of y1. Then plot y1, y2, y2_shifted.
 
-        As it is a general function it returns plt.figure, so that it can be modified
-        by function one level above.
+            As it is a general function it returns plt.figure, so that it can be modified
+            by function one level above.
 
-        """
-        
-        fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111)
-        
-        # prepare line colors
-        color_real = 'lime'
-        color_real_shifted = 'forestgreen'
-        color_simulated = 'gold'
-        
-        # plot simulated and real data
-        ax.plot(range(len(y1_simulated)), y1_simulated, label='simulated', color=color_simulated)
-        ax.plot(range(len(y2_real)), y2_real, label='real', color=color_real)
-        
-        # if y boundaries are given plot real shifted and matching segments
-        if y2_start and y2_end:
-            # plot part of real data to which the simulated data will be matched
-            ax.plot(np.arange(y2_start, y2_end), y2_real[y2_start: y2_end],
-                    color=color_real, linewidth=5)
-            
+            """
             # match simulated data to real by shifting along x axis
-            shift, error = TuningModelParams._find_best_x_shift_to_match_plots(     # noqa (supress warning)
-                y1_reference=y1_simulated,
-                y2=y2_real,
-                y2_start_idx=y2_start,
-                y2_end_idx=y2_end)
+            shift, error = TuningModelParams._find_best_x_shift_to_match_plots(  # noqa (supress warning)
+                y1_reference=simulated_death_toll,
+                y2=real_death_toll,
+                y2_start_idx=starting_day,
+                y2_end_idx=ending_day)
             
-            if shift < 0:
-                y2_new = [np.NaN] * (-shift) + y2_real.to_list()
-            else:
-                y2_new = y2_real[shift:]
+            # get last day for which data will be plotted
+            last_day_to_search = list(RealData.get_real_death_toll().columns).index(last_date_str)
             
-            # plot shifted real data
-            ax.plot(range(len(y2_new)), y2_new, label='real shifted', color=color_real_shifted)
-            # plot matching segment of shifted real data
-            ax.plot(np.arange(y2_start - shift, y2_end - shift),
-                    y2_new[y2_start - shift: y2_end - shift],
-                    color=color_real_shifted,
-                    linewidth=5)
+            # truncate data up to given date
+            real_death_toll = real_death_toll[:last_day_to_search]
+            simulated_death_toll = simulated_death_toll[:last_day_to_search - shift]
             
-            # plot segment of simulated data for which data were matched
-            ax.plot(np.arange(y2_start - shift, y2_end - shift),
-                    y1_simulated[y2_start - shift: y2_end - shift],
-                    color=color_simulated,
-                    linewidth=5)
+            fig = plt.figure(figsize=(12, 8))
             
-            ax.set_xlim(0, 265)
-            ax.set_ylim(0, 5 * y2_real[y2_end])
-        else:
-            ax.set_xlim(0, y2_end)
-            ax.set_ylim(0, 1.1 * y2_real[y2_end])
+            gs = GridSpec(2, 1, height_ratios=[3, 1])
+            ax1 = fig.add_subplot(gs[0, 0])
+            ax2 = fig.add_subplot(gs[1, 0])
+            
+            # prepare line colors
+            color_real = 'C0'
+            color_simulated = 'C1'
+            
+            # Plot infected toll ------------------------------------------------------
+            ax1.plot(
+                range(len(real_death_toll)),
+                real_death_toll,
+                label='raportowana suma zgonów',
+                color=color_real,
+                lw=2,
+                zorder=1)
+            
+            # plot shifted simulated death toll
+            ax1.plot(
+                np.arange(0, len(simulated_death_toll)) + shift,
+                simulated_death_toll,
+                label='symulowana suma zgonów',
+                color=color_simulated,
+                lw=5,
+                alpha=0.6,
+                zorder=0)
+            
+            # plot vertical lines which will mark segment of real death toll
+            # for which simulated death toll was tuned
+            ax1.axvline(starting_day, color='red')
+            ax1.axvline(ending_day, color='red', label='dni do których dopasowywano model')
+            
+            # get max of real death toll to set y_axis limit and annotate num of fitted days
+            max_death_toll = np.nanmax(real_death_toll)
+            
+            # annotate how many days was fitted (draw arrow)
+            ax1.annotate(
+                "",
+                xy=(starting_day, max_death_toll),
+                xytext=(ending_day, max_death_toll),
+                arrowprops=dict(arrowstyle="<->"))
+            
+            # annotate how many days was fitted (write days over arrow)
+            ax1.annotate(
+                f"{ending_day - starting_day} dni",
+                xy=((ending_day + starting_day) / 2, max_death_toll * 1.02),
+                ha='center',
+                va='bottom',
+                fontsize=20,
+                bbox=dict(boxstyle="square,pad=0",
+                          fc=mColors.to_rgba('white')[:-1] + (0.8,),
+                          ec="none"),
+            )
+            
+            # annotate day 0 as 2020-03-04
+            ax1.set_xticks(ax1.get_xticks().tolist()[1:-1])
+            ax1.set_xticklabels([f'{x:.0f}' if x != 0 else '2020-03-04' for x in ax1.get_xticks().tolist()])
+            
+            # annotate starting fit date
+            ax1.text(
+                starting_day,
+                max_death_toll / 2,
+                cls._date_from_day_number(starting_day),
+                rotation=90,
+                ha='right',
+                va='center',
+                fontsize=20,
+                bbox=dict(boxstyle="square,pad=0",
+                          fc=mColors.to_rgba('white')[:-1] + (0.5,),
+                          ec="none"),
+            )
+            
+            # annotate ending fit date
+            ax1.text(
+                ending_day,
+                max_death_toll / 2,
+                cls._date_from_day_number(ending_day),
+                rotation=90,
+                ha='left',
+                va='center',
+                fontsize=20,
+                bbox=dict(boxstyle="square,pad=0",
+                          fc=mColors.to_rgba('white')[:-1] + (0.5,),
+                          ec="none"),
+            )
+            
+            # Set reasonable y_ax1is limits
+            ax1.set_ylim([-0.1 * max_death_toll, 1.5 * max_death_toll])
+            
+            ax1.legend(loc='upper left', framealpha=1)
+            
+            # Plot recovered toll ------------------------------------------------------
+            # plot real recovered toll
+            
+            real_recovered_toll = real_recovered_toll[:last_day_to_search]
+            simulated_recovered_toll = simulated_recovered_toll[:last_day_to_search - shift]
+            
+            ax2.plot(
+                range(len(real_recovered_toll)),
+                real_recovered_toll,
+                label='raportowana suma wyzdrowień',
+                color=color_real,
+                lw=2,
+                zorder=1)
+            
+            # plot shifted simulated recovered toll
+            ax2.plot(
+                np.arange(0, len(simulated_recovered_toll)) + shift,
+                simulated_recovered_toll,
+                label='symulowana suma wyzdrowień',
+                color=color_simulated,
+                lw=2,
+                alpha=0.6,
+                zorder=0)
+            
+            y_annotate_offset = .1 * max(simulated_recovered_toll)
+            ax2.annotate(
+                f"{real_recovered_toll[ending_day] / 1000:.1f}k",
+                xy=(ending_day, real_recovered_toll[ending_day]),
+                xytext=(ending_day - 10, real_recovered_toll[ending_day] + .5 * y_annotate_offset),
+                color=color_real,
+                fontsize=14,
+                arrowprops=dict(arrowstyle="->"),
+                bbox=dict(boxstyle="square,pad=0", fc="white", ec="none", lw=2),
+            )
+            
+            ax2.annotate(
+                f"{simulated_recovered_toll[ending_day - shift] / 1000:.1f}k",
+                xy=(ending_day, simulated_recovered_toll[ending_day - shift]),
+                xytext=(ending_day - 10, simulated_recovered_toll[ending_day - shift] + 2 * y_annotate_offset),
+                color=color_simulated,
+                fontsize=14,
+                arrowprops=dict(arrowstyle="->"),
+                bbox=dict(boxstyle="square,pad=0", fc="white", ec="none", lw=2))
+            
+            def format_number(*args):
+                """To write numbers of recovered with 'k' suffix. 1500 = 1.5k"""
+                
+                value = args[0]
+                if value != 0:
+                    formatter = '{:1.0f}k'.format(value * 0.001)
+                else:
+                    formatter = '{:0.0f}'.format(value)
+                return formatter
+            
+            ax2.yaxis.set_major_formatter(format_number)
+            ax2.axvline(ending_day, color='red')
+            
+            # annotate day 0 as 2020-03-04
+            ax2.set_xticks(ax2.get_xticks().tolist()[1:-1])
+            ax2.set_xticklabels([f'{x:.0f}' if x != 0 else '2020-03-04' for x in ax2.get_xticks().tolist()])
+            
+            ax2.legend(loc='upper left')
+            
+            return ax1, ax2, fig
         
-        ax.legend()
-        plt.tight_layout()
-        
-        if show:
-            plt.show()
-        
-        return fig, ax
-    
-    @classmethod
-    def plot_auto_fit_death_toll(cls,
-                                 directory: str,
-                                 voivodeship: str,
-                                 percent_of_touched_counties: int,
-                                 start_day_by='deaths',
-                                 death_toll_smooth_out_win_size=21,
-                                 death_toll_smooth_out_polyorder=3,
-                                 last_date='2020-07-01',
-                                 show=True,
-                                 save=False):
-        """
-        Assumes y(x=0) = y[0], y(x=1) = y[1] and so on.
-        Function moves y2 data along X axis to find out for what shift, subset of real death toll
-        best matches subset of the same length of simulated death toll.
-        Then plot: real death toll, simulated death toll, real death toll shifted.
-
-        Simulated data is the latest file in directory.
-        Start results from the percent_of_touched_counties.
-        End = start + days_to_fit
-        """
-        real_death_toll = RealData.get_real_death_toll()
-        
-        fnames = all_fnames_from_dir(directory=directory)
-        latest_file = max(fnames, key=os.path.getctime)
-        df = pd.read_csv(latest_file)
-        
-        if start_day_by == 'deaths':
-            starting_day = RealData.get_starting_days_for_voivodeships_based_on_district_deaths(
-                percent_of_touched_counties=percent_of_touched_counties,
-                ignore_healthy_counties=False)
-        elif start_day_by == 'infections':
-            starting_day = RealData.get_starting_days_for_voivodeships_based_on_district_infections(
-                percent_of_touched_counties=percent_of_touched_counties)
-        else:
-            raise ValueError(f"start_day_based_on must equal to 'deaths' or 'infections', but "
-                             f"{start_day_by} was given!")
-
-        ending_day = RealData.ending_days_by_death_toll_slope(
-            start_days_by=start_day_by,
-            percent_of_touched_counties=percent_of_touched_counties,
-            last_date=last_date,
-            death_toll_smooth_out_win_size=death_toll_smooth_out_win_size,
-            death_toll_smooth_out_polyorder=death_toll_smooth_out_polyorder,
-        )
-        
-        fig, ax = cls.__plot_matched_real_death_toll_to_simulated(
-            y1_simulated=df['Dead people'],
-            y2_real=real_death_toll.loc[voivodeship],
-            y2_start=starting_day[voivodeship],
-            y2_end=starting_day[voivodeship] + ending_day[voivodeship],
-            show=False)
-        
-        ax.set_title(f'Reported death toll for {voivodeship} shifted to best match simulated data on '
-                     f'the selected days range days.\n'
-                     f'Selected day range starts in a day when in {percent_of_touched_counties}% of '
-                     f'counties first {"death" if start_day_by == "deaths" else "infection"} '
-                     f'was reported.')
-        ax.set_xlabel('t, days')
-        ax.set_ylabel('death toll')
-        plt.tight_layout()
-        
-        # handles showing and saving simulation
-        main_title = (f"start day based on {start_day_by},   "
-                      f"{percent_of_touched_counties} percent of counties")
-        cls.__show_and_save(fig=fig,
-                            dir_to_data=directory,
-                            plot_type='Auto fit by percent_of_touched_counties',
-                            plot_name=" ".join(main_title.split()),
-                            save=save,
-                            show=show)
-        
-    @classmethod
-    def plot_death_toll_for_best_tuned_model_params(cls):
-        # TODO get extra list param like [beta, mortality] and add those to legend
-        # TODO plot also infected toll
-        
-        def _make_plot(sub_df):
-            real_death_toll = RealData.get_real_death_toll()
+        def make_plot(sub_df):
+            """
+            Call 'plot_matched_real_death_toll_to_simulated' and add
+            new details to plot returned by it.
+            """
+            
+            # get real death toll
+            death_tolls = RealData.get_real_death_toll()
+            recovered_tolls = RealData.get_real_infected_toll()
+            
+            # from summary df_one_voivodeship_only get row with best tuned params
             best_run = sub_df.iloc[0]
-
+            
+            # read summary details from that row
             voivodeship = best_run['voivodeship']
             starting_day = best_run['first day']
             ending_day = best_run['last day']
+            visibility = best_run['visibility']
+            mortality = best_run['mortality']
+            beta = best_run['beta']
             fname = best_run['fname']
+            
+            # read avg_df which contains course of pandemic in simulation
             avg_df = pd.read_csv(fname)
-
-            fig, ax = cls.__plot_matched_real_death_toll_to_simulated(
-                y1_simulated=avg_df['Dead people'],
-                y2_real=real_death_toll.loc[voivodeship],
-                y2_start=starting_day,
-                y2_end=ending_day,
-                show=False)
-
-            ax.set_title(f'Reported death toll for {voivodeship} shifted to best match best simulated data on '
-                         f'the selected days range.')
-            ax.set_xlabel('t, days')
-            ax.set_ylabel('death toll')
+            
+            # make plot (only with data labels; no axis, titles etc.)
+            ax1, ax2, fig = plot_matched_real_death_toll_to_simulated(
+                real_death_toll=death_tolls.loc[voivodeship],
+                simulated_death_toll=avg_df['Dead people'],
+                real_recovered_toll=recovered_tolls.loc[voivodeship],
+                simulated_recovered_toll=avg_df['Recovery people'],
+                starting_day=starting_day,
+                ending_day=ending_day,
+                last_date_str=last_date,
+            )
+            
+            # create title and axis labels
+            fig.suptitle(
+                f'{voivodeship.capitalize()}, rezultat dopasowania parametrów modelu.\n'
+                r"$\beta$"f'={beta * 100:.2f}%, '
+                f'śmiertelność={mortality:.2f}%, '
+                f'widoczność={visibility * 100:.0f}%')
+            
+            ax1.set_title('Zgony')
+            ax1.set_xlabel('t, dni')
+            ax1.set_ylabel('Suma zgonów')
+            
+            ax2.set_title('Wyzdrowienia')
+            ax2.set_xlabel('t, dni')
+            ax2.set_ylabel('Suma wyzdrowień')
+            
+            # Hide the right and top spines
+            ax1.spines['right'].set_visible(False)
+            ax1.spines['top'].set_visible(False)
+            ax2.spines['right'].set_visible(False)
+            ax2.spines['top'].set_visible(False)
+            
             plt.tight_layout()
-
+            
+            # SAVING ------------------------------------------------------------------------------
             # handles showing and saving simulation
-            main_title = f"finest model params tuning"
+            main_title = f"{voivodeship} finest model params tuning"
+            plot_type = 'Best death toll fits, beta and mortality'
+            plot_name = " ".join(main_title.split())
+            
+            # save in general plots folder
+            if save:
+                save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                plt.savefig(save_dir + plot_name + '.png')
+            
+            # show and save in avg_simulation folder
             cls.__show_and_save(fig=fig,
                                 dir_to_data=os.path.split(fname)[0] + '/',
                                 plot_type='Auto fit by percent_of_touched_counties',
                                 plot_name=" ".join(main_title.split()),
-                                save=True,
-                                show=True)
- 
+                                save=save,
+                                show=show)
+        
+        # get summary df
         df_tuning = TuningModelParams.get_tuning_results()
+        
+        # make plot gor each voivodeship which was tuned
         for voivodeship_tuned in df_tuning['voivodeship'].unique():
-            _make_plot(sub_df=df_tuning.loc[df_tuning['voivodeship'] == voivodeship_tuned])
-            
+            make_plot(sub_df=df_tuning.loc[df_tuning['voivodeship'] == voivodeship_tuned])
+    
     @classmethod
-    def plot_best_beta_mortality_pairs(cls, pairs_per_voivodeship: int):
+    def plot_best_beta_mortality_pairs(cls,
+                                       pairs_per_voivodeship: int,
+                                       show=True,
+                                       save=False):
+        
+        custom_params = {"axes.spines.right": False, "axes.spines.top": False}
+        sns.set_theme(style="ticks", rc=custom_params)
+        
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
         
-        ax.set_title(f"Best tuned "r'$\beta$'f" and mortality for each voivodeship")
+        fig.suptitle(f"Najlepiej dopasowane wartości "r'$\beta$'f" i śmiertelności"
+                     f" dla poszczególnych województw.")
         ax.set_xlabel(r"$\beta$")
-        ax.set_ylabel("mortality")
+        ax.set_ylabel("Śmiertelność")
         
         best_df = TuningModelParams.get_n_best_tuned_results(
             n=pairs_per_voivodeship)
         
-        color_list = ['green', 'red']
-        
+        voivodeships = best_df['voivodeship']
         x = best_df['beta']
         y = best_df['mortality']
-        c = []
         
-        for i in range(len(x)):
-            if best_df['fit error per day'].iloc[i] < 100:
-                c.append(color_list[0])
+        # group voivodeships by duration of first phase
+        num_of_days = best_df['last day'] - best_df['first day']
+        
+        palette = plt.get_cmap('Blues')
+        
+        ax = sns.scatterplot(
+            data=best_df,
+            x='beta',
+            y='mortality',
+            hue=num_of_days,
+            style=best_df['fit error per day'] < 40,
+            style_order=[True, False],
+            s=500,
+            palette=palette,
+            edgecolor="black",
+            lw=4,
+            legend=False,
+        )
+        
+        # Create colorbar contain pandemic duration
+        norm = mColors.Normalize(vmin=min(num_of_days),
+                                 vmax=max(num_of_days))
+        
+        sm = plt.cm.ScalarMappable(cmap=palette, norm=norm)
+        sm.set_array(np.array([]))
+        ax.figure.colorbar(sm, label='Ilość dni do których dopasowywano model')
+        
+        good_line = mlines.Line2D([], [], color='grey', marker='o', mec='k',
+                                  markersize=20, ls='None', label='Dobre dopasowanie')
+        
+        bad_line = mlines.Line2D([], [], color='grey', marker='X', mec='k',
+                                 markersize=20, ls='None', label='Złe dopasowanie')
+        
+        ax.legend(handles=[good_line, bad_line],
+                  labelspacing=2,
+                  borderpad=1.2,
+                  loc='lower right')
+        
+        texts = []
+        # annotate voivodeships
+        for x_pos, y_pos, voivodeship in zip(x, y, voivodeships):
+            texts.append(ax.text(
+                x_pos,
+                y_pos,
+                voivodeship,
+                ha='center',
+                va='center',
+                bbox=dict(boxstyle="square,pad=0.3",
+                          fc=mColors.to_rgba('lightgrey')[:-1] + (1,),
+                          ec="none"),
+            ))
+        adjust_text(
+            texts,
+            expand_points=(1.5, 1.5),
+        )
+        
+        cls.__show_and_save(
+            fig=fig,
+            plot_type='Best beta mortality pairs',
+            plot_name=f'{pairs_per_voivodeship} pairs per voivodeship',
+            save=save,
+            show=show,
+            dir_to_data=None,
+            save_in_general=True,
+        )
+        
+    @classmethod
+    def all_death_toll_from_dir_by_fixed_params(cls, fixed_params: dict, c_norm_type='log'):
+        """Plot simple death toll dynamic to ensure that params in model works fine.
+
+        fixed_params: dict defining folder in ABM/RESULTS which will be plotted.
+
+        Note: fnames should contain exactly 4 params, where 3 of them should be
+            beta, mortality, visibility. Example fname:
+            'Id=0001__p_inf_cust=2.34__b=0.025__m=0.02__v=0.65.csv'
+        """
+    
+        def get_param_name_from_fname(fname):
+            """Returns first param name found in fname except from: 'beta', 'mortality', 'visibility'."""
+        
+            fname = os.path.split(fname)[1]  # get fname without prev dirs
+            fname_splitted = fname_to_list(fname)  # convert fname to list like ['Beta=0.036', ...]
+        
+            for param in fname_splitted:
+                if not ('beta' in param.lower()
+                        or 'mortality' in param.lower()
+                        or 'visibility' in param.lower()):
+                    return param.split('=')[0].lower()
+    
+        def sort_helper(fname, parameter_name):
+            fname = os.path.split(fname)[1]  # get fname without prev dirs
+            fname_splitted = fname_to_list(fname)  # convert fname to list like ['Beta=0.036', ...]
+        
+            # make dict {'beta': 0.036, ...}
+            fname_dict = {item.split('=')[0].lower(): float(item.split('=')[1]) for item in fname_splitted}
+            return fname_dict[parameter_name.lower()]
+    
+        # Get folder name (which contains csv files)
+        folder = find_folder_by_fixed_params(
+            directory=Config.AVG_SAVE_DIR,
+            params=fixed_params)
+        folder += 'raw data/'
+    
+        # Get fnames and sort them by param values
+        fnames = all_fnames_from_dir(directory=folder)
+        param_name = get_param_name_from_fname(fnames[0])
+        fnames = sorted(fnames, key=lambda fname: sort_helper(fname, param_name))
+        param_name = TRANSLATE.to_short(param_name)
+    
+        # Get variable params from fnames and dfs from its csv files
+        variable_params = [TRANSLATE.to_short(variable_params_from_fname(fname)) for fname in fnames]
+        dfs = [pd.read_csv(fname) for fname in fnames]
+    
+        # Prepare  fig and ax
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111)
+        sns.despine(fig=fig, ax=ax)
+    
+        fig.suptitle("Suma zgonów")
+        ax.set_title(f"Różne wartości '{param_name.replace('_', ' ')}'")
+    
+        # Create rainbow colormap and colors; based on param values
+        # get min and max param values
+        param_values = np.array([float(params[param_name]) for params in variable_params])
+        min_param = np.min(param_values[np.nonzero(param_values)])
+        max_param = np.max(param_values[np.nonzero(param_values)])
+    
+        cmap = matplotlib.cm.get_cmap('rainbow')
+        # set linear or logarithm colormap
+        if c_norm_type == 'log':
+            # protection in case when 'min(param_value) == 0'
+            if 0 not in param_values:
+                log_norm = mColors.LogNorm(vmin=min_param, vmax=max_param)
+                colors = cmap(log_norm(param_values))
             else:
-                c.append(color_list[1])
-
-        good_line = mlines.Line2D([], [], color=color_list[0], marker='o', mec='k',
-                                  markersize=10, ls='None', label='Fits well')
-
-        bad_line = mlines.Line2D([], [], color=color_list[1], marker='o', mec='k',
-                                 markersize=10, ls='None', label='Fits bad')
-        
-        ax.scatter(x=x, y=y, c=c, s=100, edgecolors='black')
-
-        ax.legend(handles=[good_line, bad_line])
+                log_norm = mColors.LogNorm(vmin=min_param, vmax=max_param + min_param)
+                colors = cmap(log_norm(param_values + min_param))
+        else:
+            lin_norm = mColors.Normalize(vmin=min_param, vmax=max_param)
+            colors = cmap(lin_norm(param_values))
+    
+        # PLot data
+        for params, df, color in zip(variable_params, dfs, colors):
+            ax.plot(df['Day'], df['Dead people'],
+                    label=params[param_name], c=color)
+    
+        # label lines by putting text on top of them
+        labelLines(ax.get_lines(), zorder=2)
         plt.show()
 
 
 if __name__ == '__main__':
-    
-    # TODO design scatter like plot with best beta-mortality pairs and fit error
-
-    import cProfile
-    from pstats import Stats
-
-    pr = cProfile.Profile()
-    pr.enable()
-
-    SimulatedVisualisation.plot_death_toll_for_best_tuned_model_params()
-
-    # SimulatedVisualisation.plot_best_beta_mortality_pairs(
-    #     pairs_per_voivodeship=1)
-    
-    pr.disable()
-    stats = Stats(pr)
-    stats.sort_stats('cumtime').print_stats(10)
     pass
+
+    SimulatedVisualisation.death_toll_for_best_tuned_params(
+        last_date='2020-07-01',
+        show=True,
+        save=False
+    )

@@ -1,4 +1,4 @@
-from .my_math_utils import *
+from disease_spread_model.model.my_math_utils import *
 
 
 @njit(cache=True)
@@ -241,7 +241,7 @@ def make_ordinary_shopping_core(total_households,
                 elif A_state_by_house_id[house_id][h_member] == 0:
                     susceptible_customers += 1
                     if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 2:
-                        if np.random.rand() <= beta:
+                        if random.random() <= beta:
                             A_go_incubation_because_shopping[house_id][h_member] = True
                             infected_by_self_cashier += 1
                     A_on_shopping_by_house_id[house_id][h_member] = False
@@ -338,12 +338,15 @@ def make_extra_shopping_core(total_households,
 def try_to_infect_housemates_core(total_households,
                                   num_of_customers_in_household,
                                   suspicious_households,
+                                  infection_probability,
                                   A_state_by_house_id,
                                   A_go_incubation_because_housemate):
+    
     for house_id in range(total_households):
         if suspicious_households[house_id]:
             for house_member in range(num_of_customers_in_household):
-                if A_state_by_house_id[house_id][house_member] == 0:
+                if (A_state_by_house_id[house_id][house_member] == 0
+                        and random.random() < infection_probability):
                     A_go_incubation_because_housemate[house_id][house_member] = True
             suspicious_households[house_id] = False
 
@@ -360,8 +363,6 @@ def update_A_states_core(total_households,
                          A_illness_duration_by_house_id,
                          mortality,
                          A_ignore_quarantine_by_house_id,
-                         prob_of_survive_one_day,
-                         die_at_once,
                          avg_incubation_period,
                          incubation_period_bins,
                          S_incubation,
@@ -375,18 +376,27 @@ def update_A_states_core(total_households,
                          S_illness,
                          exponents_illness):
     
+    # prob that illness agent will survive one day
+    prob_of_survive_one_day = (1 - mortality) ** (1 / avg_illness_period)
+    
+    # for each client ...
     for house_id in range(total_households):
         for house_member in range(num_of_customers_in_household):
             
+            # if had been healthy but was infected by someone --> make him incubated for real
             if A_state_by_house_id[house_id][house_member] == 0:
-                if A_go_incubation_because_shopping[house_id][house_member] or A_go_incubation_because_housemate[house_id][house_member]:
+                if (A_go_incubation_because_shopping[house_id][house_member]
+                        or A_go_incubation_because_housemate[house_id][house_member]):
+                    
                     A_state_by_house_id[house_id][house_member] = 1
                     A_incubation_duration_by_house_id[house_id][house_member] =\
                         get_incubation_period(avg_incubation_period=avg_incubation_period,
                                               incubation_period_bins=incubation_period_bins,
                                               S_incubation=S_incubation,
                                               exponents_incubation=exponents_incubation)
-            
+                    
+            # if had been incubated --> decrease incubation time by 1
+            #   and (make him prodromal if incubation time <= 0 and mark household as suspicious)
             elif A_state_by_house_id[house_id][house_member] == 1:
                 A_incubation_duration_by_house_id[house_id][house_member] -= 1
                 if A_incubation_duration_by_house_id[house_id][house_member] <= 0:
@@ -399,7 +409,9 @@ def update_A_states_core(total_households,
                     
                     if num_of_customers_in_household > 1:
                         suspicious_households[house_id] = True
-            
+
+            # if had been prodromal --> decrease prodromal time by 1
+            #   and make him ill if prodromal time <= 0
             elif A_state_by_house_id[house_id][house_member] == 2:
                 A_prodromal_duration_by_house_id[house_id][house_member] -= 1
                 if A_prodromal_duration_by_house_id[house_id][house_member] <= 0:
@@ -409,30 +421,24 @@ def update_A_states_core(total_households,
                                            illness_period_bins=illness_period_bins,
                                            S_illness=S_illness,
                                            exponents_illness=exponents_illness)
-            
+
+            # if had been ill --> decrease illness time by 1
+            #   and make him dead; or recovered if prodromal time <= 0
             elif A_state_by_house_id[house_id][house_member] == 3:
                 A_illness_duration_by_house_id[house_id][house_member] -= 1
                 
-                if die_at_once:
-                    if A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                        if not A_ignore_quarantine_by_house_id[house_id][house_member]:
-                            if np.random.rand() <= mortality:
-                                A_state_by_house_id[house_id][house_member] = 4
-                            else:
-                                A_state_by_house_id[house_id][house_member] = -1
-                        else:
-                            A_state_by_house_id[house_id][house_member] = -1
+                # if agent is sick explicitly --> try to kill him with given prob
+                if not A_ignore_quarantine_by_house_id[house_id][house_member]:
+                    if np.random.rand() > prob_of_survive_one_day:  # if die today:
+                        A_illness_duration_by_house_id[house_id][house_member] = 0
+                        A_state_by_house_id[house_id][house_member] = 4
+                        
+                    elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
+                        A_state_by_house_id[house_id][house_member] = -1
+                # if agent is NOT sick explicitly
                 else:
-                    if not A_ignore_quarantine_by_house_id[house_id][house_member]:
-                        if np.random.rand() > prob_of_survive_one_day:  # if die today:
-                            A_illness_duration_by_house_id[house_id][house_member] = 0
-                            A_state_by_house_id[house_id][house_member] = 4
-                            
-                        elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                            A_state_by_house_id[house_id][house_member] = -1
-                    else:
-                        if A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                            A_state_by_house_id[house_id][house_member] = -1
+                    if A_illness_duration_by_house_id[house_id][house_member] <= 0:
+                        A_state_by_house_id[house_id][house_member] = -1
                 
     A_go_incubation_because_shopping.fill(False)
     A_go_incubation_because_housemate.fill(False)

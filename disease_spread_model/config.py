@@ -47,3 +47,13 @@ class Config:
         'raw data/')
     
     not_avg_directory = 'TMP_SAVE/'
+
+    avg_incubation_period = 5
+    incubation_period_bins = 3
+    avg_prodromal_period = 3
+    prodromal_period_bins = 3
+    avg_illness_period = 15
+    illness_period_bins = 1
+
+    percent_of_infected_customers_at_start = 0
+    housemate_infection_probability = 0.

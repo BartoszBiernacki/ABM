@@ -16,7 +16,6 @@ infected_cashiers_at_start = grid_side_length
 max_steps = 250
 iterations = 6
 beta_sweep = (0.012, 0.030, 1)
-beta_changes = ((1000, 2000), (1., 1.))
 mortality_sweep = (2/100, 2./100, 1)
 visibility_sweep = (0.65, 1., 1)
 run = True
@@ -38,7 +37,6 @@ if __name__ == '__main__':
                 "grid_size": grid_size,
                 "N": N,
                 "customers_in_household": Config.customers_in_household,
-                "beta_changes": beta_changes,
 
                 "avg_incubation_period": 5,
                 "incubation_period_bins": 3,

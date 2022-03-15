@@ -19,6 +19,7 @@ from .my_model_utils import set_on_shopping_true_depends_on_shopping_situation
 from .my_model_utils import set_on_extra_shopping_true_depends_on_shopping_situation
 from .my_model_utils import find_neighbouring_neighbourhoods
 from .my_model_utils import try_to_infect_housemates_core
+from .my_model_utils import get_incubation_period
 from .my_model_utils import get_prodromal_period
 
 # Ordinary population
@@ -61,37 +62,32 @@ from .collectors import calculate_infected_by_extra_cashier_today
 from .collectors import get_day
 
 
-# TODO implement starting percent of infected peoples
-# TODO implement probability of getting infected by housemate
 class DiseaseModel(Model):
     def __init__(self,
-                 grid_size,
-                 N,
-                 customers_in_household,
-                 beta_mortality_pair,
-                 beta_changes,
-                 visibility,
+                 grid_size: list[int],
+                 N: int,
+                 customers_in_household: int,
+                 beta: float,
+                 mortality: float,
+                 visibility: float,
                  
                  avg_incubation_period, incubation_period_bins,
                  avg_prodromal_period, prodromal_period_bins,
                  avg_illness_period, illness_period_bins,
-                 infected_cashiers_at_start,
-                 die_at_once,
-                 extra_shopping_boolean,
-                 infect_housemates_boolean,
-                 max_steps,
                  
-                 **kwargs):
+                 infected_cashiers_at_start,
+                 percent_of_infected_customers_at_start,
+                 extra_shopping_boolean,
+                 housemate_infection_probability,
+                 max_steps,
+                 ):
+        
         super().__init__()
         self.running = True  # required for BatchRunner
         
-        # Applying constructor arguments as self properties *********************************************************
-        if kwargs:
-            self.width = kwargs['width']
-            self.height = kwargs['height']
-        else:
-            self.width = grid_size[0]
-            self.height = grid_size[1]
+        # Applying constructor arguments as self properties *****************************
+        self.width = grid_size[0]
+        self.height = grid_size[1]
         self.num_of_households_in_neighbourhood = N
         self.customers_in_household = customers_in_household
         
@@ -101,23 +97,16 @@ class DiseaseModel(Model):
         self.prodromal_period_bins = prodromal_period_bins
         self.avg_illness_period = avg_illness_period
         self.illness_period_bins = illness_period_bins
-
-        if kwargs:
-            self.beta = kwargs['beta']
-            self.mortality = kwargs['mortality']
-        else:
-            self.beta = beta_mortality_pair[0]
-            self.mortality = beta_mortality_pair[1]
-        self.beta_0 = self.beta
-        self.beta_changes = beta_changes
+        
+        self.beta = beta
+        self.mortality = mortality
         self.visibility = visibility
         
         self.infected_cashiers_at_start = infected_cashiers_at_start
-        self.die_at_once = die_at_once
-        self.prob_of_survive_one_day = (1 - self.mortality) ** (1 / self.avg_illness_period)
+        self.percent_of_infected_customers_at_start = percent_of_infected_customers_at_start
         
         self.extra_shopping_boolean = extra_shopping_boolean
-        self.infect_housemates_boolean = infect_housemates_boolean
+        self.housemate_infection_probability = housemate_infection_probability
         self.max_steps = max_steps
         # *************************************************************************************************************
 
@@ -180,6 +169,9 @@ class DiseaseModel(Model):
         # Agent states and corespondent times ************************************************************************
         # [household_id] --> [int_1, ..., int_N], N=num_of_customers_in_household, int_m in {-1, 0, 1, 2, 3, 4}
         self.A_state_by_house_id = np.empty((self.total_households, self.customers_in_household), dtype=np.int8)
+        
+        # 'A_ignore_quarantine_by_house_id' does agent have only hidden disease symptoms which mean he can
+        #   always do shopping and never die?
         self.A_ignore_quarantine_by_house_id =\
             np.random.rand(self.total_households, self.customers_in_household) > self.visibility
         
@@ -225,8 +217,18 @@ class DiseaseModel(Model):
                 # Create customers for given neighbourhood
                 for _ in range(self.num_of_households_in_neighbourhood):
                     for household_member_id in range(self.customers_in_household):
-                        self.A_state_by_house_id[household_id][household_member_id] = 0
-                        self.A_incubation_duration_by_house_id[household_id][household_member_id] = 0
+                        # create incubated or healthy client at stert
+                        if random.random() < self.percent_of_infected_customers_at_start/100:
+                            self.A_state_by_house_id[household_id][household_member_id] = 1
+                            self.A_incubation_duration_by_house_id[household_id][household_member_id] =\
+                                get_incubation_period(avg_incubation_period=self.avg_incubation_period,
+                                                      incubation_period_bins=self.incubation_period_bins,
+                                                      S_incubation=self.S_incubation,
+                                                      exponents_incubation=self.exponents_incubation)
+                        else:
+                            self.A_state_by_house_id[household_id][household_member_id] = 0
+                            self.A_incubation_duration_by_house_id[household_id][household_member_id] = 0
+                            
                         self.A_prodromal_duration_by_house_id[household_id][household_member_id] = 0
                         self.A_illness_duration_by_house_id[household_id][household_member_id] = 0
                         
@@ -396,6 +398,7 @@ class DiseaseModel(Model):
                                       num_of_customers_in_household=self.customers_in_household,
                                       suspicious_households=self.suspicious_households,
                                       A_state_by_house_id=self.A_state_by_house_id,
+                                      infection_probability=self.housemate_infection_probability,
                                       A_go_incubation_because_housemate=self.A_go_incubation_because_housemate)
             
     def set_shopping_stats_to_zero(self):
@@ -426,8 +429,6 @@ class DiseaseModel(Model):
                              A_illness_duration_by_house_id=self.A_illness_duration_by_house_id,
                              mortality=self.mortality,
                              A_ignore_quarantine_by_house_id=self.A_ignore_quarantine_by_house_id,
-                             prob_of_survive_one_day=self.prob_of_survive_one_day,
-                             die_at_once=self.die_at_once,
                              avg_incubation_period=self.avg_incubation_period,
                              incubation_period_bins=self.incubation_period_bins,
                              S_incubation=self.S_incubation,
@@ -474,10 +475,9 @@ class DiseaseModel(Model):
         self.beta = None
         self.mortality = None
         self.infected_cashiers_at_start = None
-        self.die_at_once = None
-        self.prob_of_survive_one_day = None
+        self.percent_of_infected_customers_at_start = None
         self.extra_shopping_boolean = None
-        self.infect_housemates_boolean = None
+        self.housemate_infection_probability = None
         self.max_steps = None
         self.current_id = None
         self.day = None
@@ -539,15 +539,11 @@ class DiseaseModel(Model):
         self.set_shopping_stats_to_zero()
         self.make_shopping()
         
-        if self.infect_housemates_boolean:
+        if self.housemate_infection_probability > 0:
             self.try_to_infect_housemates()
 
         self.schedule.step()
         self.datacollector.collect(model=self)
-
-        if self.day in self.beta_changes[0]:
-            idx = self.beta_changes[0].index(self.day)
-            self.beta = self.beta_0 * self.beta_changes[1][idx]
         
         if self.day + 1 == self.max_steps:
             self.release_memory()

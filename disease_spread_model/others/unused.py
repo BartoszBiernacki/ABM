@@ -999,4 +999,198 @@ class UnusedPlots(object):
     
         return result
 
+    @classmethod
+    def plot_last_day_finding_process(cls,
+                                      voivodeships: list[str],
+                                      start_days_by='deaths',
+                                      percent_of_touched_counties=20,
+                                      last_date='2020-07-01',
+                                      death_toll_smooth_out_win_size=21,
+                                      death_toll_smooth_out_polyorder=3,
+                                      derivative_half_win_size=3,
+                                      plot_redundant=False,
+                                      show=True,
+                                      save=False,
+                                      ):
+        """
+        Plots crucial steps in finding last day of pandemic in voivodeships.
+
+        Plots:
+         - death tool
+         - death tool smoothed
+         - derivative of death toll
+         - derivative of smoothed up death toll
+         - smoothed up derivative of smoothed up death toll
+         - slope of death toll
+         - slope of smoothed up death toll
+        """
+    
+        # get voivodeships
+        if 'all' in voivodeships:
+            voivodeships = RealData.get_voivodeships()
+    
+        # get start days dict
+        start_days = RealData.starting_days(
+            by=start_days_by,
+            percent_of_touched_counties=percent_of_touched_counties,
+            ignore_healthy_counties=False)
+    
+        # get real death toll for all voivodeships (since 03.04.2019)
+        death_tolls = RealData.get_real_death_toll()
+    
+        # fill gaps in real death toll
+        for voivodeship in RealData.get_voivodeships():
+            death_tolls.loc[voivodeship] = complete_missing_data(values=death_tolls.loc[voivodeship])
+    
+        # smooth out death toll
+        death_tolls_smooth = death_tolls.copy()
+        for voivodeship in RealData.get_voivodeships():
+            death_tolls_smooth.loc[voivodeship] = savgol_filter(
+                x=death_tolls.loc[voivodeship],
+                window_length=death_toll_smooth_out_win_size,
+                polyorder=death_toll_smooth_out_polyorder)
+    
+        # get last day in which death pandemic last day will be looked for
+        last_day_to_search = list(death_tolls.columns).index(last_date)
+    
+        # Make plots
+        for voivodeship in voivodeships:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax2 = ax.twinx()
+        
+            # set title and axis labels
+            date0 = (datetime.datetime(2020, 3, 4) +
+                     datetime.timedelta(days=int(start_days[voivodeship])))
+            ax.set_title(f'Woj. {voivodeship}, szukanie końca pierwszego etapu pandemii.\n'
+                         f'Dzień 0 = {date0.strftime("%Y-%m-%d")}, na podstawie '
+                         f'stwierdzonego '
+                         f'{"zgonu" if start_days_by == "deaths" else "zachorowania"} w '
+                         f'{percent_of_touched_counties}% powiatów.\n'
+                         f'Ostatni dzień - {last_date}.')
+            ax.set_xlabel('t, dni')
+            ax.set_ylabel('Suma zgonów')
+            ax2.set_ylabel('Przeskalowana pochodna lub nachylenie sumy zgonów')
+        
+            day0 = start_days[voivodeship]
+            x_days = np.arange(-10, last_day_to_search - day0)
+        
+            # death toll
+            death_toll = death_tolls.loc[voivodeship]
+            ax.plot(x_days, death_toll[day0 - 10: last_day_to_search],
+                    color='C0', label='suma zgonów', lw=4, alpha=0.7)
+        
+            # death toll smoothed up
+            death_toll_smooth = death_tolls_smooth.loc[voivodeship]
+            ax.plot(x_days, death_toll_smooth[day0 - 10: last_day_to_search],
+                    color='C1', label='suma zgonów po wygładzeniu')
+        
+            if plot_redundant:
+                # derivative
+                derivative = window_derivative(
+                    y=death_toll,
+                    half_win_size=derivative_half_win_size)
+                ax2.plot(derivative[day0 - 10: last_day_to_search],
+                         color='C2', label='pochodna sumy zgonów', alpha=0.5)
+            
+                # smoothed up derivative
+                derivative_smoothed_up = savgol_filter(
+                    x=derivative,
+                    window_length=death_toll_smooth_out_win_size,
+                    polyorder=death_toll_smooth_out_polyorder)
+                ax2.plot(derivative_smoothed_up[day0 - 10: last_day_to_search],
+                         color='black', label='wygładzona pochodna sumy zgonów',
+                         alpha=1, lw=10)
+            
+                # derivative of smooth death toll
+                derivative_smooth = window_derivative(
+                    y=death_toll_smooth,
+                    half_win_size=derivative_half_win_size)
+                ax2.plot(derivative_smooth[day0 - 10: last_day_to_search],
+                         color='C3', lw=2,
+                         label='pochodna wygładzonej sumy zgonów')
+            
+                # smoothed up derivative of smooth death toll
+                derivative_smooth_smoothed_up = savgol_filter(
+                    x=derivative_smooth,
+                    window_length=death_toll_smooth_out_win_size,
+                    polyorder=death_toll_smooth_out_polyorder)
+                ax2.plot(derivative_smooth_smoothed_up[day0 - 10: last_day_to_search],
+                         color='yellow', lw=4,
+                         label='wygładzona pochodna wygładzonej sumy zgonów')
+            
+                # slope
+                slope = slope_from_linear_fit(data=death_toll, half_win_size=3)
+                ax2.plot(slope[day0 - 10: last_day_to_search],
+                         color='C5', alpha=0.5,
+                         label='nachylenie prostej dopasowanej do'
+                               ' fragmentów sumy zgonów')
+        
+            # slope of smooth death toll
+            slope_smooth = slope_from_linear_fit(
+                data=death_toll_smooth, half_win_size=3)
+        
+            # normalize slope to 1
+            if max(slope_smooth[day0 - 10: last_day_to_search]) > 0:
+                slope_smooth /= max(slope_smooth[day0 - 10: last_day_to_search])
+        
+            # plot normalized slope
+            ax2.plot(slope_smooth[day0 - 10: last_day_to_search],
+                     color='green', lw=4,
+                     label='nachylenie prostej dopasowanej do'
+                           ' fragmentów wygładzonej sumy zgonów')
+        
+            # Plot peaks (minima and maxima) of slope of smoothed up death toll.
+            vec = np.copy(slope_smooth[day0 - 10: last_day_to_search])
+        
+            # Maxima of slope
+            x_peaks_max = argrelmax(data=vec, order=8)[0]
+            ax2.scatter(x_peaks_max, vec[x_peaks_max],
+                        color='lime', s=140, zorder=100,
+                        label='maksima nachylenia sumy zgonów')
+            # Minima of slope
+            x_peaks_min = argrelmin(data=vec, order=8)[0]
+            ax2.scatter(x_peaks_min, vec[x_peaks_min],
+                        color='darkgreen', s=140, zorder=100,
+                        label='minima nachylenia sumy zgonów')
+        
+            # last of of pandemic as day of peak closest to 2 moths with derivative > 0.5
+            # get list of candidates for last day
+            last_day_candidates = [x for x in x_peaks_max if vec[x] > 0.5]
+            # if there are no candidates add day with largest peak
+            if not last_day_candidates:
+                try:
+                    last_day_candidates.append(max(x_peaks_max, key=lambda x: vec[x]))
+                except ValueError:
+                    # if there are no peaks add 60
+                    last_day_candidates.append(60)
+        
+            # choose find last day (nearest to 60) from candidates
+            last_day = min(last_day_candidates, key=lambda x: abs(x - 60))
+        
+            # plot a line representing last day of pandemic
+            ax.axvline(last_day, color='red')
+        
+            ymin, ymax = ax.get_ylim()
+            ax.set_ylim([0 - ymax * 0.1, ymax * 1.2])
+        
+            ymin, ymax = ax2.get_ylim()
+            ax2.set_ylim([0 - ymax * 0.1, ymax * 1.2])
+        
+            fig.legend(
+                loc="upper center",
+                ncol=2,
+                bbox_to_anchor=(0.5, 1),
+                bbox_transform=ax.transAxes,
+                fancybox=True,
+                shadow=True)
+        
+            plt.tight_layout()
+            cls.__show_and_save(fig=fig,
+                                plot_type=f'Finding last day of pandemic up to {last_date}',
+                                plot_name=(f'{voivodeship}, by {start_days_by} in {percent_of_touched_counties} '
+                                           f'percent of counties'),
+                                save=save,
+                                show=show,
+                                file_format='png')
+
 

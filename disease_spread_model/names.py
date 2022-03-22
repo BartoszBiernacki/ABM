@@ -8,7 +8,7 @@ class TRANSLATE(object):
         'mortality': 'm',
         'visibility': 'v',
         'infected_cashiers_at_start': 'inf_cash',
-        'percent_of_infected_customers_at_start': 'p_inf_cust',
+        'percent_of_infected_customers_at_start': 'pct_inf_cust',
         'housemate_infection_probability': 'h_inf_prob',
     }
     

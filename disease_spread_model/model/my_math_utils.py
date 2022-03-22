@@ -1,3 +1,5 @@
+from typing import Any, Union
+
 import numpy as np
 import random
 import math
@@ -16,20 +18,47 @@ def get_rand_int_from_triangular_distribution(left, mode, right):
 
 def get_rand_n_ints_from_triangular_distribution(left, mode, right, n):
     vals = np.random.triangular(left, mode, right, n).round()
-    int_vals = np.array(vals, dtype=np.int32)
-    return int_vals
+    return np.array(vals, dtype=np.int32)
 
 
-def get_S_and_exponents_for_sym_hist(bins: int) -> '(S, exponents)':
+def get_S_and_exponents_for_sym_hist(bins: int) -> tuple[Union[int, Any], np.ndarray]:
+    """Calculate values needed to create symmetrical histogram.
+    
+    Parameters
+    ----------
+    bins : int
+        Number of bins in desired histogram.
+    
+    Returns
+    -------
+    S : int
+        Surface of histogram. Bar width == 1, smallest bar height == 1.
+        Example: bins=7 --> counts == [1, 2, 4, 8, 4 2, 1] --S-> 1+2+4+8+4+2+1=22
+    exponents : np.ndarray
+        Palindrom list of length = `bins` starting with 0.
+        This list represents exponents which doubles of halves
+        previous values.
+        Example: bins=5 --> [0, 1, 2, 1, 0] --exp-> [1, 2, 4, 2, 1].
+    """
+    
+    if bins <= 0:
+        raise ValueError(f"Number of bins must even positive integer,"
+                         f" while {bins} were passed!")
+
     if not bins % 2:
-        raise ValueError(f"Number of bins must be odd to create histogram with single peak, while {bins} were given!")
+        raise ValueError(f"Number of bins must be odd to create histogram with single peak,"
+                         f" while {bins} were given!")
+
+    if not isinstance(bins, int):
+        raise ValueError(f"Number of bins must even positive integer,"
+                         f" while {bins} were passed!")
 
     n = bins // 2
-    S = 2 * np.sum(2 ** i for i in range(n))
+    S = 2 * sum(2 ** i for i in range(n))
     S += 2 ** n
 
     exponents = np.array([], dtype=int)
-    first = [i for i in range(bins // 2)]
+    first = list(range(bins // 2))
     exponents = np.append(exponents, first)
     exponents = np.append(exponents, bins // 2)
     exponents = np.append(exponents, list(reversed(first)))
@@ -112,22 +141,18 @@ def calc_exec_time(grid_size, N, household_size, max_steps, iterations, betas, m
     print(f'It will take {hours} hours and {minutes} minutes to evaluate {runs} simulations')
 
 
-def sort_df_indices_by_col(df, column):
+def sort_df_indices_by_col(df, column) -> dict:
     """
     Returns dict in which keys are indices of dataframe and val is pos of that index
     in df sorted by specified column
     """
-    result = {}
     df = df.sort_values(by=column)
-    
-    for i, df_index in enumerate(df.index):
-        result[df_index] = i
-    
-    return result
+
+    return {df_index: i for i, df_index in enumerate(df.index)}
 
 
 def sort_dict_by_values(dictionary):
-    return {k: v for k, v in sorted(dictionary.items(), key=lambda item: item[1])}
+    return dict(sorted(dictionary.items(), key=lambda key_val: key_val[1]))
 
 
 def window_derivative(y, half_win_size):

@@ -1,4 +1,5 @@
 import cProfile
+import copy
 import pstats
 
 from mesa.batchrunner import BatchRunner
@@ -8,12 +9,24 @@ from disease_spread_model.mesa_modified.mesa_batchrunner_modified import BatchRu
 from disease_spread_model.model.disease_model import DiseaseModel
 from disease_spread_model.data_processing.avg_results import Results
 from disease_spread_model.data_processing.text_processing import *
-from disease_spread_model.config import Config
+from disease_spread_model.config import ModelOptions
 
 
-class RunModel(object):
-    def __init__(self):
-        pass
+class RunModel:
+    @classmethod
+    def _get_proper_fixed_params(cls, variable_params: dict, fixed_params: dict) -> dict:
+        
+        # Find out which params are missing
+        missing_params = set(ModelOptions.DEFAULT_MODEL_PARAMS) - set(fixed_params | variable_params)
+        
+        # Do not modify dict passed to function
+        fixed_params = copy.copy(fixed_params)
+        
+        # Fill missing entries in fixed params
+        for key in missing_params:
+            fixed_params[key] = ModelOptions.DEFAULT_MODEL_PARAMS[key]
+        
+        return fixed_params
     
     @classmethod
     def _run_background_simulation(cls,
@@ -24,7 +37,10 @@ class RunModel(object):
                                    iterations,
                                    max_steps):
         
+        fixed_params = cls._get_proper_fixed_params(variable_params=variable_params,
+                                                    fixed_params=fixed_params)
         fixed_params['max_steps'] = max_steps
+
         if multi:
             if profiling:
                 with cProfile.Profile() as pr:
@@ -46,25 +62,28 @@ class RunModel(object):
                                           iterations=iterations,
                                           max_steps=max_steps)
                 batch_run.run_all()
-        else:
-            if profiling:
-                with cProfile.Profile() as pr:
-                    batch_run = BatchRunner(model_cls=DiseaseModel,
-                                            variable_parameters=variable_params,
-                                            fixed_parameters=fixed_params,
-                                            iterations=iterations,
-                                            max_steps=max_steps)
-                    batch_run.run_all()
-                stats = pstats.Stats(pr)
-                stats.sort_stats(pstats.SortKey.TIME)
-                stats.print_stats(10)
-            else:
+        elif profiling:
+            with cProfile.Profile() as pr:
                 batch_run = BatchRunner(model_cls=DiseaseModel,
                                         variable_parameters=variable_params,
                                         fixed_parameters=fixed_params,
                                         iterations=iterations,
                                         max_steps=max_steps)
                 batch_run.run_all()
+            stats = pstats.Stats(pr)
+            stats.sort_stats(pstats.SortKey.TIME)
+            stats.print_stats(10)
+        else:
+            batch_run = BatchRunner(model_cls=DiseaseModel,
+                                    variable_parameters=variable_params,
+                                    fixed_parameters=fixed_params,
+                                    iterations=iterations,
+                                    max_steps=max_steps)
+            batch_run.run_all()
+    
+    @classmethod
+    def _are_base_params_valid(cls, base_params: tuple or list) -> bool:
+        return all(param in ModelOptions.DEFAULT_MODEL_PARAMS for param in base_params)
     
     @classmethod
     def run_and_save_simulations(
@@ -74,13 +93,13 @@ class RunModel(object):
             iterations,
             max_steps,
             remove_single_results=False,
-            base_params=(
-                    'grid_size',
-                    'N',
-                    'customers_in_household',
-                    'infected_cashiers_at_start',
-            ),
+            base_params=('grid_size', 'N', 'customers_in_household'),
     ):
+        
+        if not cls._are_base_params_valid(base_params):
+            raise ValueError(f"'base_params' wrong because "
+                             f"{set(base_params) - set(ModelOptions.DEFAULT_MODEL_PARAMS)} "
+                             f"is not in 'DiseaseModel' constructor!")
         
         cls._run_background_simulation(variable_params=variable_params,
                                        fixed_params=fixed_params,
@@ -107,26 +126,26 @@ class RunModel(object):
     def run_simulation_with_one_sweep(
             cls,
             sweep_params: dict[str: list[float]],
-          
-            grid_size=(20, 20),
-            N=700,
-            customers_in_household=3,
-            beta=0.025,
-            mortality=0.02,
-            visibility=0.65,
             
-            avg_incubation_period=Config.avg_incubation_period,
-            incubation_period_bins=Config.incubation_period_bins,
-            avg_prodromal_period=Config.avg_prodromal_period,
-            prodromal_period_bins=Config.prodromal_period_bins,
-            avg_illness_period=Config.avg_illness_period,
-            illness_period_bins=Config.illness_period_bins,
+            grid_size=ModelOptions.GRID_SIZE,
+            N=ModelOptions.N,
+            customers_in_household=ModelOptions.CUSTOMERS_IN_HOUSEHOLD,
+            beta=ModelOptions.BETA,
+            mortality=ModelOptions.MORTALITY,
+            visibility=ModelOptions.VISIBILITY,
             
-            infected_cashiers_at_start=20,
-            percent_of_infected_customers_at_start=5,
-            extra_shopping_boolean=True,
-            housemate_infection_probability=0.1,
-            max_steps=250,
+            avg_incubation_period=ModelOptions.AVG_INCUBATION_PERIOD,
+            incubation_period_bins=ModelOptions.INCUBATION_PERIOD_BINS,
+            avg_prodromal_period=ModelOptions.AVG_PRODROMAL_PERIOD,
+            prodromal_period_bins=ModelOptions.PRODROMAL_PERIOD_BINS,
+            avg_illness_period=ModelOptions.AVG_ILLNESS_PERIOD,
+            illness_period_bins=ModelOptions.ILLNESS_PERIOD_BINS,
+            
+            infected_cashiers_at_start=ModelOptions.INFECTED_CASHIERS_AT_START,
+            percent_of_infected_customers_at_start=ModelOptions.PERCENT_OF_INFECTED_CUSTOMERS_AT_START,
+            extra_shopping_boolean=ModelOptions.EXTRA_SHOPPING_BOOLEAN,
+            housemate_infection_probability=ModelOptions.HOUSEMATE_INFECTION_PROBABILITY,
+            max_steps=ModelOptions.MAX_STEPS,
             
             iterations=12,
     ):
@@ -157,7 +176,7 @@ if __name__ == '__main__':
     
     param_range1 = np.linspace(0.01, .15, 5)
     # param_range2 = np.logspace(np.log10(0.3), np.log10(30), 7)
-    param_range2 = np.logspace(np.log10(1), np.log10(30), 5)
+    param_range2 = np.logspace(np.log10(1), np.log10(30), 2)
     
     param_range2 = np.round(param_range2, decimals=2)
     param_range1 = np.round(param_range1, decimals=2)
@@ -171,27 +190,20 @@ if __name__ == '__main__':
                 'mortality': [2 / 100],
                 'visibility': [0.65],
             },
-    
+            
             grid_size=(20, 20),
             N=700,
             customers_in_household=3,
             beta=0.025,
             mortality=0.02,
             visibility=0.65,
-    
-            avg_incubation_period=Config.avg_incubation_period,
-            incubation_period_bins=Config.incubation_period_bins,
-            avg_prodromal_period=Config.avg_prodromal_period,
-            prodromal_period_bins=Config.prodromal_period_bins,
-            avg_illness_period=Config.avg_illness_period,
-            illness_period_bins=Config.illness_period_bins,
-    
+            
             infected_cashiers_at_start=20,
             percent_of_infected_customers_at_start=0,
-            extra_shopping_boolean=True,
             housemate_infection_probability=0.1,
+            
+            extra_shopping_boolean=True,
             max_steps=200,
-    
-            iterations=11,
+            
+            iterations=2,
         )
-    

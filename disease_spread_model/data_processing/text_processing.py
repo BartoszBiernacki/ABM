@@ -24,8 +24,8 @@ def group_tuples_by_start(list_of_tuples, start_length):
     result = {}
     tuples_starts = [[item for i, item in enumerate(tup) if i < start_length] for tup in list_of_tuples]
     tuples_starts.sort()
-    unique_tuples_starts = list(tuples_starts for tuples_starts, _ in itertools.groupby(tuples_starts))
-
+    unique_tuples_starts = [tuples_starts for tuples_starts, _ in itertools.groupby(tuples_starts)]
+    
     for unique_tuple_start in unique_tuples_starts:
         tuples_grouped_by_start = []
         for tup in list_of_tuples:
@@ -37,7 +37,6 @@ def group_tuples_by_start(list_of_tuples, start_length):
 
 
 def fname_to_list(fname):
-    
     fname = os.path.split(fname)[1]
     
     # convert fname to list like ['Beta=0.036', ...]
@@ -47,11 +46,11 @@ def fname_to_list(fname):
         fname_splitted = fname.split('__')[1:]
     else:
         raise NotImplementedError
-
+    
     # remove '.csv' from last elem
     if fname_splitted[-1][-4:] == '.csv':
         fname_splitted[-1] = fname_splitted[-1][:-4]
-
+    
     return fname_splitted
 
 
@@ -69,7 +68,7 @@ def variable_params_from_fname(fname):
     if 'Beta_mortality_pair' in my_dict:
         b_m = my_dict.pop('Beta_mortality_pair')
         b = b_m[1: b_m.find(', ')]
-        m = b_m[b_m.find(', ')+2: -1]
+        m = b_m[b_m.find(', ') + 2: -1]
         
         my_dict['beta'], my_dict['mortality'] = b, m
     
@@ -99,9 +98,7 @@ def fixed_params_from_fname(fname):
             beta = float(param[param.find('=(') + 2: param.find(', ')])
             mortality = float(param[param.find(', ') + 2: param.find(')')])
             
-            new_new_list.append(f'beta={beta}')
-            new_new_list.append(f'mortality={mortality}')
-        
+            new_new_list.extend((f'beta={beta}', f'mortality={mortality}'))
         elif 'Num_of_infected_cashiers_at_start=' in param:
             infected_at_start = int(param[param.find('=') + 1:])
             new_new_list.append(f'Infected cashiers at start={infected_at_start}')
@@ -113,7 +110,7 @@ def fixed_params_from_fname(fname):
             new_new_list.append(new_list[i].replace('_', ' '))
     
     my_dict = {}
-    for i, param in enumerate(new_new_list):
+    for param in new_new_list:
         key = param[: param.find('=')]
         if key == 'Grid_size':
             key = 'Grid size'
@@ -130,7 +127,7 @@ def voivodeship_from_fname(fname):
     :param fname: path to file from which voivodeship will be recognized.
     :type fname: str
     """
-
+    
     # needs to be imported here, otherwise circular import error
     from disease_spread_model.data_processing.real_data import RealData
     
@@ -138,7 +135,7 @@ def voivodeship_from_fname(fname):
     i = 0
     while len(fname) > 0:
         folder_name = fname[: fname.find('/')]
-        fname = fname[fname.find('/')+1:]
+        fname = fname[fname.find('/') + 1:]
         
         if folder_name.lower() in RealData.get_voivodeships():
             return folder_name.lower()
@@ -154,11 +151,9 @@ def all_fnames_from_dir(directory):
     if not Path(directory).exists():
         raise FileNotFoundError(directory)
     
-    fnames = []
     cwd = os.getcwd()
     os.chdir(directory)
-    for file in glob.glob("*.*"):
-        fnames.append(directory + file)
+    fnames = [directory + file for file in glob.glob("*.*")]
     os.chdir(cwd)
     
     fnames.sort()
@@ -168,12 +163,8 @@ def all_fnames_from_dir(directory):
 
 def get_ax_title_from_fixed_params(fixed_params):
     ax_title = ''
-    i = 0
-    for key, val in fixed_params.items():
-        if key == 'Infect housemates':
-            val = str(bool(int(val)))
+    for i, (key, val) in enumerate(fixed_params.items(), start=1):
         ax_title += key + '=' + val + ' ' * 4
-        i += 1
         if i % 3 == 0:
             ax_title = ax_title[:-4]
             ax_title += '\n'
@@ -182,7 +173,6 @@ def get_ax_title_from_fixed_params(fixed_params):
 
 
 def get_legend_from_variable_params(variable_params, ignored_params):
-    
     # variable_params has {'beta': val} and also {r'$\beta$': val}
     # for legend purpose use only r'$\beta$'
     ignored_params.append('beta')
@@ -203,9 +193,7 @@ def get_legend_from_variable_params(variable_params, ignored_params):
 
 
 def dict_to_fname_str(dictionary):
-    result = ''
-    for key, val in dictionary.items():
-        result += str(key) + '=' + str(val) + '___'
+    result = ''.join(f"{str(key)}={str(val)}__" for key, val in dictionary.items())
     
     return result[:-3]
 
@@ -235,7 +223,7 @@ def group_fnames_by_pair_param2_param3_and_param1(directory: str,
         param1, param2, param3 = beta, mortality, visibility
         result[i][j] --> fname( (mortality, visibility)_i, beta_j )
     """
-
+    
     # prepare dict which will contain unique values of param1
     params1_vals_to_index = {}
     # prepare dict which will contain unique values of pairs (param2, param3)
@@ -250,7 +238,7 @@ def group_fnames_by_pair_param2_param3_and_param1(directory: str,
         
         # read variable_params from fname
         variable_params = variable_params_from_fname(fname=fname)
-
+        
         # make pair (param2 value, param3 value) add it to a dict if it appears for the first time
         tup = (variable_params[param2], variable_params[param3])
         if tup not in pair_params2_params3_vals_to_index.keys():
@@ -260,25 +248,27 @@ def group_fnames_by_pair_param2_param3_and_param1(directory: str,
         param1_value = variable_params[param1]
         if param1_value not in params1_vals_to_index.keys():
             params1_vals_to_index[param1_value] = len(params1_vals_to_index)
-
+    
     # sort dict by it's values.
     # order of items in it matters while plotting death toll (line color depends on it) ---------------
-    params1_vals_to_index = \
-        {k: v for k, v in zip(sorted(params1_vals_to_index.keys()), range(len(params1_vals_to_index)))}
-        
+    params1_vals_to_index = dict(zip(
+        sorted(params1_vals_to_index.keys()),
+        range(len(params1_vals_to_index)),
+    )
+    )
+    
     # create empty resulting list
     result = np.zeros((len(pair_params2_params3_vals_to_index), len(params1_vals_to_index)), dtype=object)
     
     # iterate over fnames again and fill resulting list
     for fname in fnames:
-        
         # read variable_params from fname
         variable_params = variable_params_from_fname(fname=fname)
         
         # get pair (param2 value, param3 value) and its corresponding index
         tup = (variable_params[param2], variable_params[param3])
         first_index = pair_params2_params3_vals_to_index[tup]
-
+        
         # get value of param1 and its corresponding index
         param1_value = variable_params[param1]
         second_index = params1_vals_to_index[param1_value]
@@ -351,14 +341,24 @@ def group_fnames_by_param1_param2_param3(directory: str,
     
     # sort each dict by it's values.
     # order of items in them matters while plotting death toll (line color depends on it) ---------------
-    params1_vals_to_index = \
-        {k: v for k, v in zip(sorted(params1_vals_to_index.keys()), range(len(params1_vals_to_index)))}
+    params1_vals_to_index = dict(zip(
+        sorted(params1_vals_to_index.keys()),
+        range(len(params1_vals_to_index)),
+    )
+    )
     
-    params2_vals_to_index = \
-        {k: v for k, v in zip(sorted(params2_vals_to_index.keys()), range(len(params2_vals_to_index)))}
+    params2_vals_to_index = dict(zip(
+        sorted(params2_vals_to_index.keys()),
+        range(len(params2_vals_to_index)),
+    )
+    )
     
-    params3_vals_to_index = \
-        {k: v for k, v in zip(sorted(params3_vals_to_index.keys()), range(len(params3_vals_to_index)))}
+    params3_vals_to_index = dict(zip(
+        sorted(params3_vals_to_index.keys()),
+        range(len(params3_vals_to_index)),
+    )
+    )
+    
     # ---------------------------------------------------------------------------------------------------
     
     # result will be a 3D list of fnames (strings)
@@ -391,6 +391,7 @@ def group_fnames_by_param1_param2_param3(directory: str,
     
     return result
 
+
 # *****************************************************************************************************************
 
 
@@ -409,11 +410,11 @@ def check_uniqueness_and_correctness_of_params(param1: str,
     
     allowed_params = ['beta', 'mortality', 'visibility']
     
-    are_params_allowed = all([param in allowed_params
-                              for param in [param1, param2, param3]])
+    are_params_allowed = all(param in allowed_params
+                             for param in [param1, param2, param3])
     if not are_params_allowed:
-        are_params_allowed = all([param in TRANSLATE.to_short(allowed_params)
-                                  for param in [param1, param2, param3]])
+        are_params_allowed = all(param in TRANSLATE.to_short(allowed_params)
+                                 for param in [param1, param2, param3])
     
     are_params_unique = len([param1, param2, param3]) == len({param1, param2, param3})
     
@@ -438,18 +439,17 @@ def get_last_simulated_day(fname: str):
 
 
 def dirname_to_dict(dirname):
-    
     f = ''
     if '___' in dirname:
         f = dirname.split('___')
     elif '__' in dirname:
         f = dirname.split('__')
-        
+    
     d = {}
     for item in f:
         key, val = item.split('=')
         d[key] = val
-
+    
     return d
 
 
@@ -460,14 +460,11 @@ def is_dict1_in_dict2(d1, d2):
     Note2: for flexibility reasons, for comparison are used modified key, value pairs
         e.g. key --> str(key).lower(); value --> str(value).lower()
     """
-
+    
     d1 = {str(k).lower(): str(v).lower() for k, v in d1.items()}
     d2 = {str(k).lower(): str(v).lower() for k, v in d2.items()}
 
-    if d1.items() <= d2.items():
-        return True
-    else:
-        return False
+    return d1.items() <= d2.items()
 
 
 def find_folder_by_fixed_params(directory: str, params: dict):
@@ -491,7 +488,3 @@ def find_folder_by_fixed_params(directory: str, params: dict):
         if is_dict1_in_dict2(d1=params, d2=folder_dict):
             return directory + folder + '/'
     raise FileNotFoundError
-
-
-
-    

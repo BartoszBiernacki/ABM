@@ -1194,3 +1194,493 @@ class UnusedPlots(object):
                                 file_format='png')
 
 
+class TuningModelParams:
+    
+    # General usage method *****************************************
+    @classmethod
+    def __get_prev_results(cls) -> pd.DataFrame:
+        try:
+            df = pd.read_csv(Directories.TUNING_MODEL_PARAMS_FNAME)
+        except (FileNotFoundError, pd.errors.EmptyDataError):
+            df = pd.DataFrame(columns=[
+                'voivodeship',
+                'fit error per day',
+                'lowest error',
+                'visibility',
+                'mortality',
+                'beta',
+                'runs',
+                'first day',
+                'last day',
+                'shift',
+                'timestamp',
+                'fname'
+            ])
+        return df
+    
+    @classmethod
+    def __save_tuning_result(cls, df_tuning_details: pd.DataFrame):
+        
+        def sort_df_and_mark_best_tuned_params(df):
+            def mark_best(sub_df):
+                # make sure that 'fit error per day' contains only floats
+                sub_df['fit error per day'] = np.array(sub_df['fit error per day'], dtype=float)
+                
+                min_val = min(sub_df['fit error per day'])
+                for idx, row in sub_df.iterrows():
+                    sub_df.loc[idx, 'lowest error'] = (row['fit error per day'] == min_val)
+                
+                return sub_df
+            
+            df = df.groupby('voivodeship').apply(mark_best)
+            df.sort_values(by=['voivodeship', 'fit error per day'], inplace=True, ignore_index=True)
+            
+            return df
+        
+        def add_result_model_params_tuning_to_file(df_to_add: pd.DataFrame):
+            import time
+            
+            df = cls.__get_prev_results()  # get df from file
+            df_to_add['timestamp'] = time.strftime("%Y-%m-%d %H:%M:%S")
+            df = pd.concat([df, df_to_add])  # insert row (merge)
+            
+            # sort df and mark best runs
+            df = sort_df_and_mark_best_tuned_params(df)
+            
+            # convert floats to nicely formatted strings -------------
+            cols_2f = ['fit error per day', 'visibility']
+            cols_3f = ['mortality']
+            cols_5f = ['beta']
+            
+            for col in cols_2f:
+                df[col] = [f'{val:.2f}' for val in df[col]]
+            for col in cols_3f:
+                df[col] = [f'{val:.3f}' for val in df[col]]
+            for col in cols_5f:
+                df[col] = [f'{val:.5f}' for val in df[col]]
+            # -------------------------------------------------------
+            
+            # save new df to csv
+            save_dir = os.path.split(Directories.TUNING_MODEL_PARAMS_FNAME)[0]
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            df.to_csv(Directories.TUNING_MODEL_PARAMS_FNAME, index=False)
+        
+        add_result_model_params_tuning_to_file(df_to_add=df_tuning_details)
+    
+    @classmethod
+    def get_tuning_results(cls):
+        return cls.__get_prev_results()
+    
+    @classmethod
+    def get_n_best_tuned_results(cls, n: int):
+        df = cls.__get_prev_results()
+        result_df = pd.DataFrame(columns=df.columns)
+        
+        for voivodeship in df['voivodeship'].unique():
+            result_df = pd.concat([result_df, df.loc[df['voivodeship'] == voivodeship].iloc[:n]])
+        
+        result_df.reset_index(inplace=True, drop=True)
+        return result_df
+    
+    @classmethod
+    def get_n_lastly_tuned_results(cls, n: int):
+        df = cls.get_tuning_results()
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.sort_values(by='timestamp', ignore_index=True, inplace=True, ascending=False)
+        df.reset_index(inplace=True, drop=True)
+        return df.iloc[:n].to_markdown()
+    
+    @classmethod
+    def _get_h_inf_prob_proper_value(cls,
+                                     h_inf_prob: Union[HInfProb, float],
+                                     **kwargs):
+        
+        if isinstance(h_inf_prob, (float, int)):
+            h_inf_prob = float(h_inf_prob)
+            if 0 <= h_inf_prob <= 1:
+                return h_inf_prob
+        
+        elif h_inf_prob == HInfProb.DEFAULT:
+            return ModelOptions.HOUSEMATE_INFECTION_PROBABILITY
+        
+        elif h_inf_prob == HInfProb.BY_BETA:
+            try:
+                beta = kwargs['beta']
+            except KeyError as e:
+                raise ValueError('To use `HInfProb.BY_BETA` pass also `beta=value` to '
+                                 'this function!') from e
+            
+            num_of_days = ModelOptions.AVG_PRODROMAL_PERIOD + ModelOptions.AVG_ILLNESS_PERIOD
+            
+            return 1 - (1 - beta) ** num_of_days
+        
+        else:
+            raise ValueError(f'To get proper `h_inf_prob` pass `HInfProb` ENUM or float or '
+                             f'HInfProb` and `beta=value`. Was passed {h_inf_prob, kwargs}')
+    
+    @classmethod
+    def _find_best_x_shift_to_match_plots(cls,
+                                          y1_reference,
+                                          y2,
+                                          y2_start_idx,
+                                          y2_end_idx):
+        """
+        Returns index of elem from which data y2[start: stop] best match any slice of the same length of y1.
+        Also returns fit error (SSE).
+        """
+        y1_reference = np.array(y1_reference)
+        y2 = np.array(y2[y2_start_idx: y2_end_idx + 1])
+        
+        smallest_difference = 1e9
+        y2_length = y2_end_idx - y2_start_idx + 1
+        shift = 0
+        
+        for i in range(len(y1_reference) - len(y2) + 1):
+            y1_subset = y1_reference[i: i + y2_length]
+            
+            difference = np.sum((y2 - y1_subset) ** 2)
+            
+            if difference < smallest_difference:
+                smallest_difference = difference
+                shift = i
+        
+        shift = y2_start_idx - shift
+        
+        return shift, smallest_difference
+    
+    @classmethod
+    def _find_shift_and_fit_error(cls,
+                                  voivodeship: str,
+                                  beta: float,
+                                  mortality: float,
+                                  visibility: float,
+                                  iterations: int,
+                                  starting_day: int,
+                                  ending_day: int,
+                                  optimize_param: OptimizeParam,
+                                  max_steps: int,
+                                  housemate_infection_probability: Union[HInfProb, float]
+                                  ):
+        
+        """
+        A general purpose method of this class.
+        Runs simulation for given params and returns best
+        shift and fit error.
+
+        Runs simulations to evaluate how similar real data are to simulation data.
+        Similarity is measured since beginning of pandemic for given voivodeship specified
+        by percent_of_touched_counties. Real data are shifted among X axis to best match
+        simulated data (only in specified interval).
+
+        Function returns best shift and fit error associated with it.
+        Fit error = SSE / days_to_fit_death_toll.
+        """
+        
+        real_general_data = RealData.get_real_general_data()
+        grid_side_length = real_general_data.loc[voivodeship, 'grid side MODEL']
+        h_inf_prob = cls._get_h_inf_prob_proper_value(
+            h_inf_prob=housemate_infection_probability,
+            beta=beta)
+        
+        directory = RunModel.run_and_save_simulations(
+            fixed_params={
+                "grid_size": (grid_side_length, grid_side_length),
+                "N": real_general_data.loc[voivodeship, 'N MODEL'],
+                "infected_cashiers_at_start": grid_side_length,
+            },
+            
+            variable_params={
+                "beta": [beta],
+                "mortality": [mortality / 100],
+                "visibility": [visibility],
+                "housemate_infection_probability": [h_inf_prob],
+            },
+            
+            iterations=iterations,
+            max_steps=max_steps,
+            
+            base_params=['grid_size',
+                         'N',
+                         'customers_in_household',
+            
+                         'infected_cashiers_at_start',
+                         'percent_of_infected_customers_at_start',
+                         ],
+            
+            remove_single_results=True
+        )
+        
+        # As it ran simulations for only one triplet of (visibility, beta, mortality)
+        # then result is the one file in avg_directory. To be specific it is
+        # the latest file in directory, so read from it.
+        fnames = all_fnames_from_dir(directory=directory)
+        latest_file = max(fnames, key=os.path.getctime)
+        df = pd.read_csv(latest_file)
+        
+        shift, error = cls._find_best_x_shift_to_match_plots(
+            y1_reference=df['Dead people'],
+            y2=RealData.get_real_death_toll().loc[voivodeship],
+            y2_start_idx=starting_day,
+            y2_end_idx=ending_day)
+        
+        df = pd.DataFrame(
+            {
+                "voivodeship": [voivodeship],
+                "fit error per day": [error / (ending_day - starting_day)],
+                "visibility": [visibility],
+                "mortality": [mortality],
+                "beta": [beta],
+                "runs": [iterations],
+                'first day': [starting_day],
+                'last day': [ending_day],
+                'shift': [shift],
+                'fname': [latest_file],
+                "optimize method": [optimize_param.value],
+            },
+            index=[-1],
+        )
+        
+        cls.__save_tuning_result(df_tuning_details=df)
+        return shift, error / (ending_day - starting_day)
+    
+    @classmethod
+    def optimize_beta_or_mortality(
+            cls,
+            which: OptimizeParam,
+            voivodeships: list[str],
+            ignored_voivodeships: Union[list[str], None],
+            starting_days: Union[str, dict],
+            percent_of_touched_counties: int,
+            housemate_infection_probability: Union[HInfProb, float],
+            last_date=RealDataOptions.LAST_DATE,
+            visibility=ModelOptions.VISIBILITY,
+            beta=ModelOptions.BETA,
+            mortality=ModelOptions.MORTALITY,
+            simulations_to_avg=12,
+            num_of_shots=8,
+    ):
+        """
+        Finds optimal 'beta' or 'mortality' for given voivodeships.
+        Save all tweaking attempts on disk as well as summary of them in
+        csv file.
+
+        Runs simulation on many 'beta' or 'mortality', while trying to
+        minimize fit 'error_per_day'. Error comes from difference between
+        real and simulated death toll segment.
+        Real segment is between starting and ending days.
+        Simulated death toll firstly is moved along X axis to
+        minimize difference between real and simulated data (pandemic
+        in model may start earlier/later than real, I care only about
+        it's course).
+        """
+        
+        def _fun_to_optimize(vec_beta_or_mortality, extra_dict_args):
+            if extra_dict_args['which'] == OptimizeParam.BETA:
+                beta_val = vec_beta_or_mortality[0]
+                mortality_val = extra_dict_args['mortality']
+            else:
+                mortality_val = vec_beta_or_mortality[0]
+                beta_val = extra_dict_args['beta']
+            
+            beta_val /= 100
+            
+            sim_result = cls._find_shift_and_fit_error(
+                voivodeship=extra_dict_args['voivodeship'],
+                beta=beta_val,
+                mortality=mortality_val,
+                visibility=extra_dict_args['visibility'],
+                housemate_infection_probability=housemate_infection_probability,
+                iterations=extra_dict_args['iterations'],
+                starting_day=extra_dict_args['starting_day'],
+                ending_day=extra_dict_args['ending_day'],
+                optimize_param=extra_dict_args['which'],
+                max_steps=ModelOptions.MAX_STEPS,
+            )
+            
+            # return fit_error
+            fit_error = sim_result[1]
+            print(f'beta={beta_val * 100:.4f}, mortality={mortality_val:.4f}, fit_error={fit_error:.2f}')
+            return fit_error
+        
+        # make sure starting_days is a dict object
+        if isinstance(starting_days, str):
+            starting_days = \
+                RealData.starting_days(
+                    by=starting_days,
+                    percent_of_touched_counties=percent_of_touched_counties,
+                    ignore_healthy_counties=True)
+        
+        # get ending days
+        ending_days = RealData.ending_days_by_death_toll_slope(
+            starting_days_by=StartingDayBy.INFECTIONS,
+            percent_of_touched_counties=percent_of_touched_counties,
+            last_date=last_date)
+        
+        # If none of the voivodeship is excluded --> create 'ignored_voivodeships'
+        # as a list with 'None' entry only.
+        # ignored_voivodeships' list will be subtracted later while iterating over voivodeships
+        if not ignored_voivodeships:
+            ignored_voivodeships = ['None']
+        
+        for voivodeship in (set(voivodeships) - set(ignored_voivodeships)):
+            
+            extra_args = {
+                'which': which,
+                'voivodeship': voivodeship,
+                'visibility': visibility,
+                'iterations': simulations_to_avg,
+                'starting_day': starting_days[voivodeship],
+                'ending_day': ending_days[voivodeship],
+            }
+            
+            """"
+            Init guess (beta in percent not float to be same order as
+            mortality to speed up convergence, beta is transformed back later).
+
+            Constraints 'cons' as inequalities 'expression' > 0, example:
+            'lambda vec: vec[0] - 1' --> 'x0[0] - 1 > 0' --> 'beta > 1%'.
+            Used constraints: (1% < beta < 6%); (1% < mortality < 4%) """
+            if which == OptimizeParam.BETA:
+                x0 = np.array([beta * 100])
+                cons = OptimizeParam.BETA_CONS.value
+                extra_args['mortality'] = mortality
+            
+            elif which == OptimizeParam.MORTALITY:
+                x0 = np.array([mortality])
+                cons = OptimizeParam.MORTALITY_CONS.value
+                extra_args['beta'] = beta * 100
+            
+            else:
+                raise ValueError(
+                    f"Param is {which}, but it should be"
+                    f"{OptimizeParam.BETA} or {OptimizeParam.MORTALITY}")
+            
+            fit_result = fmin_cobyla(func=_fun_to_optimize,
+                                     x0=x0,
+                                     cons=cons,
+                                     args=(extra_args,),
+                                     consargs=(),
+                                     rhobeg=0.25,
+                                     rhoend=0.01,
+                                     maxfun=num_of_shots,
+                                     catol=0,
+                                     )
+            
+            print(f'\nFinal fit result = {fit_result}')
+    
+    @classmethod
+    def optimize_beta_and_mortality(
+            cls,
+            voivodeships: list[str],
+            ignored_voivodeships: Union[list[str], None],
+            starting_days: Union[str, dict],
+            percent_of_touched_counties: int,
+            housemate_infection_probability: Union[HInfProb, float],
+            last_date=RealDataOptions.LAST_DATE,
+            visibility=ModelOptions.VISIBILITY,
+            beta_init=ModelOptions.BETA,
+            mortality_init=ModelOptions.MORTALITY,
+            simulations_to_avg=12,
+            num_of_shots=8,
+    ):
+        """
+        Finds optimal 'beta' 'mortality' pair for given voivodeships.
+        Save all tweaking attempts on disk as well as summary of them in
+        csv file.
+
+        Runs simulation on many 'beta' 'mortality' pairs, while trying to
+        minimize fit 'error_per_day'. Error comes from difference between
+        real and simulated death toll segment.
+        Real segment is between starting and ending days.
+        Simulated death toll firstly is moved along X axis to
+        minimize difference between real and simulated data (pandemic
+        in model may start earlier/later than real, I care only about
+        it's course).
+        """
+        
+        def _fun_to_optimize(vec_beta_mortality, extra_dict_args):
+            beta, mortality = vec_beta_mortality
+            beta = beta / 100
+            
+            sim_result = cls._find_shift_and_fit_error(
+                voivodeship=extra_dict_args['voivodeship'],
+                beta=beta,
+                mortality=mortality,
+                visibility=extra_dict_args['visibility'],
+                housemate_infection_probability=housemate_infection_probability,
+                iterations=extra_dict_args['iterations'],
+                starting_day=extra_dict_args['starting_day'],
+                ending_day=extra_dict_args['ending_day'],
+                optimize_param=OptimizeParam.BETA_AND_MORTALITY,
+                max_steps=ModelOptions.MAX_STEPS,
+            
+            )
+            
+            # return fit_error
+            fit_error = sim_result[1]
+            print(f'beta={beta * 100:.4f}, mortality={mortality:.4f}, fit_error={fit_error:.2f}')
+            return fit_error
+        
+        # make sure starting_days is dict since now
+        if isinstance(starting_days, str):
+            starting_days = \
+                RealData.starting_days(
+                    by=starting_days,
+                    percent_of_touched_counties=percent_of_touched_counties,
+                    ignore_healthy_counties=True)
+        
+        # get ending days
+        ending_days = RealData.ending_days_by_death_toll_slope(
+            starting_days_by=StartingDayBy.INFECTIONS,
+            percent_of_touched_counties=percent_of_touched_counties,
+            last_date=last_date)
+        
+        if 'all' in voivodeships:
+            voivodeships = RealData.get_voivodeships()
+        
+        # If none of the voivodeship is excluded then create ignored_voivodeships
+        # as list which will can be subtracted later while iterating over voivodeships
+        if not ignored_voivodeships:
+            ignored_voivodeships = ['None']
+        
+        for voivodeship in (set(voivodeships) - set(ignored_voivodeships)):
+            # init guess (beta in percent not float to be same order as
+            # mortality to speed up convergence, beta is transformed later)
+            x0 = np.array([beta_init * 100, mortality_init])
+            
+            cons = OptimizeParam.BETA_AND_MORTALITY_CONS.value
+            
+            extra_args = {'voivodeship': voivodeship,
+                          'visibility': visibility,
+                          'iterations': simulations_to_avg,
+                          'starting_day': starting_days[voivodeship],
+                          'ending_day': ending_days[voivodeship]
+                          }
+            
+            fit_result = fmin_cobyla(func=_fun_to_optimize,
+                                     x0=x0,
+                                     cons=cons,
+                                     args=(extra_args,),
+                                     consargs=(),
+                                     rhobeg=0.25,
+                                     rhoend=0.01,
+                                     maxfun=num_of_shots,
+                                     catol=0,
+                                     )
+            
+            print(f'\nFinal fit result = {fit_result}')
+    
+    @classmethod
+    def main(cls):
+    cls.optimize_beta_and_mortality(
+        voivodeships=['opolskie'],
+        ignored_voivodeships=RealData.bad_voivodeships(),
+        starting_days='infections',
+        percent_of_touched_counties=80,
+        last_date='2020-07-01',
+        visibility=0.65,
+        beta_init=0.025,
+        mortality_init=2,
+        simulations_to_avg=24,
+        num_of_shots=4,
+    )

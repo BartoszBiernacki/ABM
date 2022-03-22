@@ -7,11 +7,11 @@ import numpy as np
 from scipy.signal import savgol_filter, argrelmax
 
 from disease_spread_model.data_processing.text_processing import *
-from disease_spread_model.config import Config
+from disease_spread_model.config import Directories, RealDataOptions, ModelOptions, StartingDayBy
 from disease_spread_model.model.my_math_utils import *
 
 
-class RealData(object):
+class RealData:
     """
     Purpose of this class is to provide following real data:
         * get_voivodeships() - list of voivodeships
@@ -48,15 +48,15 @@ class RealData(object):
     
     # http://eregion.wzp.pl/obszary/stan-i-struktura-ludnosci
     __fname_GUS_general_pop_data = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"raw/"
         f"geospatial/"
         f"GUS_general_pop_data.csv")
-
+    
     __fname_counties_in_voivodeship_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
@@ -65,7 +65,7 @@ class RealData(object):
     
     # http://eregion.wzp.pl/liczba-mieszkancow-przypadajacych-na-1-sklep
     __fname_peoples_per_shop = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"raw/"
@@ -78,24 +78,24 @@ class RealData(object):
     
     # https://bit.ly/covid19_powiaty
     __fname_pandemic_day_by_day_early = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"raw/"
         f"pandemic/"
         f"early_data/"
         f"COVID-19_04.03-23.11.xlsm")
-
+    
     __dir_pandemic_day_by_day_late_raw = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"raw/"
         f"pandemic/"
         f"late_data/")
-
+    
     __fname_pandemic_day_by_day_late_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
@@ -103,7 +103,7 @@ class RealData(object):
         f"pandemic_day_by_day.pck")
     
     __fname_entire_death_toll_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
@@ -111,7 +111,7 @@ class RealData(object):
         f"entire_death_toll.pck")
     
     __fname_entire_interpolated_death_toll_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
@@ -119,7 +119,7 @@ class RealData(object):
         f"entire_interpolated_death_toll.pck")
     
     __fname_entire_infected_toll_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
@@ -127,23 +127,20 @@ class RealData(object):
         f"entire_infected_toll.pck")
     
     __fname_df_excel_deaths_pandemic_early_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
         f"pandemic/"
         f"df_excel_deaths_pandemic_early_final.pck")
-
+    
     __fname_df_excel_infections_pandemic_early_final = (
-        f"{Config.ABM_dir}/"
+        f"{Directories.ABM_DIR}/"
         f"disease_spread_model/"
         f"data/"
         f"processed/"
         f"pandemic/"
         f"df_excel_infections_pandemic_early_final.pck")
-    
-    def __init__(self):
-        pass
     
     # Get voivodeships ************************************************************************************************
     @classmethod
@@ -210,7 +207,10 @@ class RealData(object):
     
     # Get data about population, population density, urbanization and shops among voivodeships [2019 and 2021] *******
     @classmethod
-    def get_real_general_data(cls, customers_in_household=3):
+    def get_real_general_data(
+            cls,
+            customers_in_household=ModelOptions.CUSTOMERS_IN_HOUSEHOLD):
+        
         """
         Get DataFrame with real population data independent of the pandemic like
         urbanization , population density and number of shops.
@@ -282,7 +282,7 @@ class RealData(object):
                                     'zachodniopomorskie': 74}
         
         # add new column with population density
-        df['population density'] = [val for val in population_density_mixed.values()]
+        df['population density'] = list(population_density_mixed.values())
         # ----------------------------------------------------------------------------------------------------------
         
         # Get data about num of peoples per shop [2021 to new temporary DataFrame ---------------------------
@@ -372,7 +372,7 @@ class RealData(object):
             fname_only = fname_only[pos + 1:]
         
         # read day from filename
-        day = fname_only[:4] + '-' + fname_only[4:6] + '-' + fname_only[6:8]
+        day = f'{fname_only[:4]}-{fname_only[4:6]}-{fname_only[6:8]}'
         
         # make dataframe about voivodeships not counties
         df = df.groupby(['wojewodztwo']).sum()
@@ -413,15 +413,13 @@ class RealData(object):
         # get list of files from given directory
         fnames = all_fnames_from_dir(directory=cls.__dir_pandemic_day_by_day_late_raw)
         
-        # prepare dict which will be returned by this method
-        result_dict = {}
-        
         # create empty Dataframes having a desired format (same like read dataframe ,,df'')
         df = cls.__get_significant_pandemic_late_data(fname=fnames[0])
         voivodeships = df.index.to_list()
         cols = df.columns.to_list()
-        for voivodeship in voivodeships:
-            result_dict[voivodeship] = pd.DataFrame(columns=cols)
+        result_dict = {
+            voivodeship: pd.DataFrame(columns=cols) for voivodeship in voivodeships
+        }
         
         # one day of pandemic is one file so iterate over them, grab data and insert as rows to Dataframes
         for fname in fnames:
@@ -523,8 +521,7 @@ class RealData(object):
         df_excel.columns = dates
         df_excel.drop(columns=['2020-11-24'], inplace=True)
         
-        death_toll_initial = df_excel.max(axis=1)
-        return death_toll_initial
+        return df_excel.max(axis=1)
     
     @classmethod
     def __get_death_toll_for_early_pandemic(cls):
@@ -565,10 +562,9 @@ class RealData(object):
         
         early_pandemic_death_toll = cls.__get_death_toll_for_early_pandemic()
         
-        pandemic_death_toll = early_pandemic_death_toll.merge(late_pandemic_death_toll,
-                                                              on='voivodeship', how='inner')
-        
-        return pandemic_death_toll
+        return early_pandemic_death_toll.merge(
+            late_pandemic_death_toll, on='voivodeship', how='inner'
+        )
     
     @classmethod
     def __save_entire_death_toll_as_pickle(cls):
@@ -634,9 +630,7 @@ class RealData(object):
         df_excel.columns = dates
         df_excel.drop(columns=['2020-11-24'], inplace=True)
         
-        infected_toll_initial = df_excel.max(axis=1)
-        
-        return infected_toll_initial
+        return df_excel.max(axis=1)
     
     @classmethod
     def __merge_properly_early_and_late_pandemic_infected_toll(cls):
@@ -656,10 +650,9 @@ class RealData(object):
         
         early_pandemic_infected_toll = cls.__get_infected_toll_for_early_pandemic()
         
-        pandemic_infected_toll = early_pandemic_infected_toll.merge(late_pandemic_infected_toll,
-                                                                    on='voivodeship', how='inner')
-        
-        return pandemic_infected_toll
+        return early_pandemic_infected_toll.merge(
+            late_pandemic_infected_toll, on='voivodeship', how='inner'
+        )
     
     @classmethod
     def __save_entire_infected_toll_as_pickle(cls):
@@ -693,8 +686,8 @@ class RealData(object):
         """
         
         def shift_data_by_n_days(df, n):
-            org_dates = [datetime.datetime.strptime(date, "%Y-%m-%d") for date in df.columns]
-            shift_dates = [date + datetime.timedelta(days=n) for date in org_dates]
+            org_dates = [datetime.datetime.strptime(str(_date), "%Y-%m-%d") for _date in df.columns]
+            shift_dates = [_date + datetime.timedelta(days=n) for _date in org_dates]
             df.columns = shift_dates
             return df
         
@@ -709,7 +702,7 @@ class RealData(object):
         for day_num in range(14):
             date = datetime.datetime(2020, 3, 4) + datetime.timedelta(days=day_num)
             d[date] = np.zeros(num_of_voivodeships)
-            
+        
         # fill missing data for first days in shifted infected toll
         artificial_infected_toll_first_days = pd.DataFrame(data=d)
         artificial_infected_toll_first_days.set_index(pd.Index(cls.get_voivodeships()),
@@ -728,7 +721,6 @@ class RealData(object):
         recovered_toll = shifted_infected_toll.sub(death_toll, fill_value=0)
         
         return recovered_toll
-    
     
     # Get data about death toll in it's early stage (before data from GUS)
     @classmethod
@@ -772,13 +764,13 @@ class RealData(object):
             df_excel_deaths_pandemic_early = cls.__load_df_excel_deaths_pandemic_early_from_pickle()
         
         return df_excel_deaths_pandemic_early
-
+    
     # Get data about infected toll in it's early stage (before data from GUS)
     @classmethod
     def __get_df_excel_infections_pandemic_early(cls):
         io = cls.__fname_pandemic_day_by_day_early
         sheet_name = 'Suma przypadków'
-    
+        
         df_excel = pd.read_excel(io=io, sheet_name=sheet_name)
         
         df_excel.drop(columns=['Kod', "Unnamed: 1"], inplace=True)
@@ -787,25 +779,25 @@ class RealData(object):
         
         # rop last col (24.11.2019) as it is empty
         df_excel = df_excel.iloc[:, :-1]
-    
+        
         # some counties have the same name which causes problem so I'll rename them ...
         df_excel = rename_duplicates_in_df_index_column(df_excel)
-    
+        
         return df_excel
-
+    
     @classmethod
     def __save_df_excel_infections_pandemic_early_as_pickle(cls):
         df_excel_infections_pandemic_early = cls.__get_df_excel_infections_pandemic_early()
-    
+        
         with open(cls.__fname_df_excel_infections_pandemic_early_final, 'wb') as handle:
             pickle.dump(df_excel_infections_pandemic_early, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    
     @classmethod
     def __load_df_excel_infections_pandemic_early_from_pickle(cls):
         with open(cls.__fname_df_excel_infections_pandemic_early_final, 'rb') as handle:
             df_excel_infections_pandemic_early = pickle.load(handle)
         return df_excel_infections_pandemic_early
-
+    
     @classmethod
     def _get_df_excel_infections_early(cls):
         """
@@ -817,7 +809,7 @@ class RealData(object):
         except FileNotFoundError:
             cls.__save_df_excel_infections_pandemic_early_as_pickle()
             df_excel_infections_pandemic_early = cls.__load_df_excel_infections_pandemic_early_from_pickle()
-    
+        
         return df_excel_infections_pandemic_early
     
     # Get first day of pandemic based on number of deaths ************************************************************
@@ -839,9 +831,11 @@ class RealData(object):
     
     # Get first day of pandemic based on in how many percent of counties there was at least one death case ***********
     @classmethod
-    def _get_starting_days_for_voivodeships_based_on_district_deaths(cls,
-                                                                     percent_of_touched_counties,
-                                                                     ignore_healthy_counties):
+    def _get_starting_days_for_voivodeships_based_on_district_deaths(
+            cls,
+            percent_of_touched_counties=RealDataOptions.PERCENT_OF_DEATH_COUNTIES,
+            ignore_healthy_counties=False):
+        
         """
         Returns dict sorted by values in which:
             key = voivodeship
@@ -855,35 +849,34 @@ class RealData(object):
         """
         df_excel = cls.__get_df_excel_deaths_early()
         counties_in_voivodeship = cls.get_counties_in_voivodeship()
-    
+        
         starting_day_for_voivodeship = {}
         for voivodeship, counties in counties_in_voivodeship.items():
             starting_days = []
             for district in counties:
                 day = np.argmax(df_excel.loc[district] > 0)
                 starting_days.append(day)
-        
+            
             if ignore_healthy_counties:
                 starting_days = [day for day in starting_days if day > 0]
             else:
                 starting_days = [day if day > 0 else max(starting_days) for day in starting_days]
             starting_days.sort()
-        
+            
             index = len(starting_days) * percent_of_touched_counties / 100
             index = int(round(index, 0))
             index = min(index, len(starting_days) - 1)
-        
+            
             starting_day_for_voivodeship[voivodeship] = starting_days[index]
+        
+        # Return sorted dict by values (days increasing)
+        return sort_dict_by_values(starting_day_for_voivodeship)
     
-        # sort dict by values of values (days increasing)
-        starting_day_for_voivodeship = {k: v for k, v in
-                                        sorted(starting_day_for_voivodeship.items(), key=lambda item: item[1])}
-        return starting_day_for_voivodeship
-
     # Get first day of pandemic based on in how many percent of counties there was at least one infected case ********
     @classmethod
-    def _get_starting_days_for_voivodeships_based_on_district_infections(cls,
-                                                                         percent_of_touched_counties):
+    def _get_starting_days_for_voivodeships_based_on_district_infections(
+            cls,
+            percent_of_touched_counties=RealDataOptions.PERCENT_OF_INFECTED_COUNTIES):
         """
         Returns dict sorted by values in which:
             key = voivodeship
@@ -897,52 +890,50 @@ class RealData(object):
         """
         df_excel = cls._get_df_excel_infections_early()
         counties_in_voivodeship = cls.get_counties_in_voivodeship()
-    
+        
         starting_day_for_voivodeship = {}
         for voivodeship, counties in counties_in_voivodeship.items():
-        
+            
             # find starting days for each counties as a day when someone got infected
             starting_days = []
             for district in counties:
                 day = np.argmax(df_excel.loc[district] > 0)
                 starting_days.append(day)
-        
+            
             # if no one got infected --> day = last day
             starting_days = [day if day > 0 else max(starting_days) for day in starting_days]
             starting_days.sort()
-        
+            
             # find day number in which in given percent of counties someone got infected
             index = len(starting_days) * percent_of_touched_counties / 100
             index = int(round(index, 0))
             index = min(index, len(starting_days) - 1)
-        
+            
             # add result to returning dict
             starting_day_for_voivodeship[voivodeship] = starting_days[index]
-    
-        # sort dict by values of values (days increasing)
-        starting_day_for_voivodeship = {k: v for k, v in
-                                        sorted(starting_day_for_voivodeship.items(), key=lambda item: item[1])}
-        return starting_day_for_voivodeship
+        
+        # Return sorted dict by values (days increasing)
+        return sort_dict_by_values(starting_day_for_voivodeship)
     
     @classmethod
-    def starting_days(cls,
-                      by='infections',
-                      percent_of_touched_counties=80,
-                      ignore_healthy_counties=True):
+    def starting_days(
+            cls,
+            by=RealDataOptions.STARTING_DAYS_BY,
+            percent_of_touched_counties=RealDataOptions.PERCENT_OF_INFECTED_COUNTIES,
+            ignore_healthy_counties=False):
         
         # get starting day of pandemic by percent of touched counties
-        if by == 'deaths':
+        if by == StartingDayBy.DEATHS:
             starting_days = \
                 cls._get_starting_days_for_voivodeships_based_on_district_deaths(
                     percent_of_touched_counties=percent_of_touched_counties,
                     ignore_healthy_counties=ignore_healthy_counties)
-        elif by == 'infections':
+        elif by == StartingDayBy.INFECTIONS:
             starting_days = \
                 cls._get_starting_days_for_voivodeships_based_on_district_infections(
                     percent_of_touched_counties=percent_of_touched_counties)
         else:
-            raise ValueError("'start_day_by' has to equal 'infections' or 'deaths', but"
-                             f"'{by}' was given!")
+            raise NotImplementedError
         
         return starting_days
     
@@ -953,24 +944,22 @@ class RealData(object):
         """
         Returns dict in which key = voivodeship, value = since how many deaths death tool looks smooth.
         """
-        result = {'dolnośląskie': 1,
-                  'kujawsko-pomorskie': 100,
-                  'lubelskie': 50,
-                  'lubuskie': 50,
-                  'łódzkie': 1,
-                  'małopolskie': 200,
-                  'mazowieckie': 1,
-                  'opolskie': 100,
-                  'podkarpackie': 200,
-                  'podlaskie': 50,
-                  'pomorskie': 50,
-                  'śląskie': 1,
-                  'świętokrzyskie': 100,
-                  'warmińsko-mazurskie': 20,
-                  'wielkopolskie': 1,
-                  'zachodniopomorskie': 50}
-        
-        return result
+        return {'dolnośląskie': 1,
+                'kujawsko-pomorskie': 100,
+                'lubelskie': 50,
+                'lubuskie': 50,
+                'łódzkie': 1,
+                'małopolskie': 200,
+                'mazowieckie': 1,
+                'opolskie': 100,
+                'podkarpackie': 200,
+                'podlaskie': 50,
+                'pomorskie': 50,
+                'śląskie': 1,
+                'świętokrzyskie': 100,
+                'warmińsko-mazurskie': 20,
+                'wielkopolskie': 1,
+                'zachodniopomorskie': 50}
     
     # Get death toll in day specified for each voivodeship by input dict like  {mazowieckie: 50, śląskie: 34, ...}
     @classmethod
@@ -984,14 +973,14 @@ class RealData(object):
             voivodeships_days = {mazowieckie: 50, śląskie: 34, opolskie: 94, ...}
         """
         death_toll = cls.get_real_death_toll()
-        
-        starting_death_toll = {}
-        for voivodeship, day in voivodeships_days.items():
-            starting_death_toll[voivodeship] = death_toll.loc[voivodeship][day]
-        
-        # sort dict by values of values (death toll increasing)
-        starting_death_toll = {k: v for k, v in sorted(starting_death_toll.items(), key=lambda item: item[1])}
-        return starting_death_toll
+
+        starting_death_toll = {
+            voivodeship: death_toll.loc[voivodeship][day]
+            for voivodeship, day in voivodeships_days.items()
+        }
+
+        # Return sorted dict by values of values (death toll increasing)
+        return sort_dict_by_values(starting_death_toll)
     
     # Get death toll shifted (with respect to real days), such in given day there was not less than specified deaths *
     @classmethod
@@ -1034,7 +1023,7 @@ class RealData(object):
         # -----------------------------------------------------------------------------------------------------------
         
         return shifted_real_death_toll
-
+    
     # Get last day of pandemic for each voivodeship
     @staticmethod
     def _get_neighbouring_indices_with_max_delta_value(data: np.ndarray):
@@ -1048,18 +1037,18 @@ class RealData(object):
         :param data: array of numeric values
         :type data: np.ndarray
         """
-    
+        
         max_delta = 0
         idx = None
         for i in range(len(data) - 1):
             val1 = data[i]
             val2 = data[i + 1]
-        
+            
             delta = abs(val2 - val1)
             if delta > max_delta:
                 max_delta = delta
                 idx = i
-    
+        
         return idx, idx + 1
     
     @staticmethod
@@ -1069,12 +1058,12 @@ class RealData(object):
     @classmethod
     def ending_days_by_death_toll_slope(
             cls,
-            starting_days='deaths',
-            percent_of_touched_counties=20,
-            last_date='2020-07-01',
-            death_toll_smooth_out_win_size=21,
-            death_toll_smooth_out_polyorder=3,
-    ):
+            starting_days_by=RealDataOptions.STARTING_DAYS_BY,
+            percent_of_touched_counties=RealDataOptions.PERCENT_OF_INFECTED_COUNTIES,
+            last_date=RealDataOptions.LAST_DATE,
+            death_toll_smooth_out_win_size=RealDataOptions.DEATH_TOLL_DERIVATIVE_SMOOTH_OUT_WIN_SIZE,
+            death_toll_smooth_out_polyorder=RealDataOptions.DEATH_TOLL_DERIVATIVE_SMOOTH_OUT_SAVGOL_POLYORDER,
+    ):  # sourcery no-metrics
         """
         Returns last day of first phase of pandemic.
         
@@ -1095,8 +1084,8 @@ class RealData(object):
                 * nearest to day 60 since start day
                 * peak value > 0.5
         
-        :param starting_days: 'deaths' or 'infections' or dict {voivodeship: day}
-        :type starting_days: Union[str, dict]
+        :param starting_days_by: 'deaths' or 'infections'
+        :type starting_days_by: StartingDayBy
         :param percent_of_touched_counties: how many counties has to be
             affected by 'start_days_by' to set given day as first day of pandemic.
         :type percent_of_touched_counties: int
@@ -1116,61 +1105,57 @@ class RealData(object):
         
         def fdir_from_args():
             
-            _dir = (f"{Config.ABM_dir}/"
+            _dir = (f"{Directories.ABM_DIR}/"
                     f"disease_spread_model/"
                     f"data/"
                     f"processed/"
                     f"pandemic/"
                     f"last_days/")
             
-            fname = (f"{starting_days}_{percent_of_touched_counties} "
+            fname = (f"{starting_days_by}_{percent_of_touched_counties} "
                      f"last_date_{last_date} "
                      f"win_size_{death_toll_smooth_out_win_size}"
                      f"polyorder_{death_toll_smooth_out_polyorder}"
                      f".pck")
-
+            
             return _dir + fname
         
         def save_result(result_dict):
             fdir = fdir_from_args()
             save_dir = os.path.split(fdir)[0]
             Path(save_dir).mkdir(parents=True, exist_ok=True)
-
+            
             with open(fdir, 'wb') as handle:
                 pickle.dump(result_dict,
                             handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
-
+        
         def was_found_before():
             return os.path.isfile(fdir_from_args())
         
         def read_result():
             with open(fdir_from_args(), 'rb') as handle:
                 return pickle.load(handle)
-                
+        
         def compute_last_days():
-
+            
             # create empty result dict
             result = {}
             
             # get start days dict {voivodeship: days}
-            if isinstance(starting_days, str):
-                # get start days dict
-                start_days = cls.starting_days(
-                    by=starting_days,
-                    percent_of_touched_counties=percent_of_touched_counties,
-                    ignore_healthy_counties=False
-                )
-            else:
-                start_days = starting_days
-           
+            start_days = cls.starting_days(
+                by=starting_days_by,
+                percent_of_touched_counties=percent_of_touched_counties,
+                ignore_healthy_counties=False
+            )
+            
             # get real death toll for all voivodeships (since 03.04.2019)
             death_tolls = RealData.get_real_death_toll()
-    
+            
             # fill gaps in real death toll
             for voivodeship in RealData.get_voivodeships():
                 death_tolls.loc[voivodeship] = complete_missing_data(values=death_tolls.loc[voivodeship])
-    
+            
             # smooth out death toll
             death_tolls_smooth = death_tolls.copy()
             for voivodeship in RealData.get_voivodeships():
@@ -1178,7 +1163,7 @@ class RealData(object):
                     x=death_tolls.loc[voivodeship],
                     window_length=death_toll_smooth_out_win_size,
                     polyorder=death_toll_smooth_out_polyorder)
-    
+            
             # get last day in which death pandemic last day will be looked for
             last_day_to_search = list(death_tolls.columns).index(last_date)
             
@@ -1190,7 +1175,7 @@ class RealData(object):
                 if day0 > last_day_to_search:
                     result[voivodeship] = np.NaN
                     continue
-    
+                
                 # slope of smooth death toll
                 slope_smooth = slope_from_linear_fit(
                     data=death_tolls_smooth.loc[voivodeship],
@@ -1199,13 +1184,13 @@ class RealData(object):
                 # normalize slope to 1
                 if max(slope_smooth[day0: last_day_to_search]) > 0:
                     slope_smooth /= max(slope_smooth[day0: last_day_to_search])
-    
+                
                 # Get peaks (maxima) of slope of smoothed up death toll.
                 vec = np.copy(slope_smooth[day0: last_day_to_search])
-    
+                
                 # Maxima of slope
                 x_peaks_max = argrelmax(data=vec, order=8)[0]
-    
+                
                 # last of of pandemic as day of peak closest to 2 moths with derivative > 0.5
                 # get list of candidates for last day
                 last_day_candidates = [x for x in x_peaks_max if vec[x] > 0.5]
@@ -1216,36 +1201,32 @@ class RealData(object):
                     except ValueError:
                         # if there are no peaks add 60
                         last_day_candidates.append(60)
-    
+                
                 # choose find last day (nearest to 60) from candidates
                 last_day = min(last_day_candidates, key=lambda x: abs(x - 60))
                 
                 # add last day to result dict
                 result[voivodeship] = day0 + last_day
-                
+            
             return result
         
         if was_found_before():
             return read_result()
         else:
             last_days = compute_last_days()
-            if isinstance(starting_days, str):
-                save_result(result_dict=last_days)
+            save_result(result_dict=last_days)
             return last_days
-            
+
+
+def main():
+    """Can do some on fly tests here."""
+    print()
+
+    starting_days = RealData.starting_days()
+    ending_days = RealData.ending_days_by_death_toll_slope()
+    print(starting_days)
+    print(ending_days)
+
 
 if __name__ == '__main__':
-    
-    starting_days = RealData.starting_days(
-        by='infections',
-        percent_of_touched_counties=80,
-        ignore_healthy_counties=False,
-    )
-    
-    ending_days = RealData.ending_days_by_death_toll_slope(
-        starting_days='infections',
-        percent_of_touched_counties=80,
-        last_date='2020-07-01',
-        death_toll_smooth_out_win_size=21,
-        death_toll_smooth_out_polyorder=3,
-        )
+    main()

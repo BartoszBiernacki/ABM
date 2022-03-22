@@ -39,20 +39,20 @@ def get_illness_period(avg_illness_period,
 def find_neighbouring_neighbourhoods(all_cashiers, neighbourhood_pos_to_id):
     # [neighbourhood_id] --> [neighbour_neighbourhood_1_id, ..., neighbour_neighbourhood_n_id], n in {0, 1, 2, 3, 4}
     possible_steps_as_neighbourhood_ids = []
-    for i, cashier in enumerate(all_cashiers):
+    for cashier in all_cashiers:
         pos, possible_steps = cashier.show_neighbourhood()
         if pos in possible_steps:
             possible_steps.remove(pos)
 
         possible_steps_yx = [t[::-1] for t in possible_steps]
-        possible_steps_for_specific_cell_as_neighbourhoods_id = []
-        for possible_step_yx in possible_steps_yx:
-            possible_steps_for_specific_cell_as_neighbourhoods_id.append(neighbourhood_pos_to_id[possible_step_yx])
+        possible_steps_for_specific_cell_as_neighbourhoods_id = [
+            neighbourhood_pos_to_id[possible_step_yx]
+            for possible_step_yx in possible_steps_yx
+        ]
+
         possible_steps_as_neighbourhood_ids.append(possible_steps_for_specific_cell_as_neighbourhoods_id)
 
-    result = np.array(possible_steps_as_neighbourhood_ids, dtype=np.int16)
-
-    return result
+    return np.array(possible_steps_as_neighbourhood_ids, dtype=np.int16)
 
 
 @njit(cache=True)
@@ -221,6 +221,7 @@ def make_ordinary_shopping_core(total_households,
                                 beta,
                                 A_go_incubation_because_shopping,
                                 C_go_incubation_because_shopping):
+    # sourcery no-metrics
     customers = 0
     recovery_customers = 0
     susceptible_customers = 0
@@ -228,50 +229,61 @@ def make_ordinary_shopping_core(total_households,
     prodromal_customers = 0
     illness_customers = 0
     infected_by_self_cashier = 0
-    
+
     for house_id in range(total_households):
         for h_member in range(num_of_customers_in_household):
             if A_on_shopping_by_house_id[house_id][h_member]:
                 customers += 1
-                
+
                 if A_state_by_house_id[house_id][h_member] == -1:
                     recovery_customers += 1
                     A_on_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 0:
                     susceptible_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 2:
-                        if random.random() <= beta:
-                            A_go_incubation_because_shopping[house_id][h_member] = True
-                            infected_by_self_cashier += 1
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 2
+                        and random.random() <= beta
+                    ):
+                        A_go_incubation_because_shopping[house_id][h_member] = True
+                        infected_by_self_cashier += 1
                     A_on_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 1:
                     incubation_customers += 1
                     A_on_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 2:
                     prodromal_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
-                        if np.random.rand() <= beta:
-                            C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0
+                        and np.random.rand() <= beta
+                    ):
+                        C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
                     A_on_shopping_by_house_id[house_id][h_member] = False
-                    
+
                 elif A_state_by_house_id[house_id][h_member] == 3:
                     illness_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
-                        if np.random.rand() <= beta:
-                            C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0
+                        and np.random.rand() <= beta
+                    ):
+                        C_go_incubation_because_shopping[neigh_id_by_house_id[house_id]] = True
                     A_on_shopping_by_house_id[house_id][h_member] = False
-                    
+
     if susceptible_customers + incubation_customers + prodromal_customers + illness_customers + recovery_customers != \
             customers:
         raise ValueError("Customers in different stages must add up to all customers!")
 
-    result = (customers, susceptible_customers, incubation_customers, prodromal_customers, illness_customers,
-              recovery_customers, infected_by_self_cashier)
-    
-    return result
+    return (
+        customers,
+        susceptible_customers,
+        incubation_customers,
+        prodromal_customers,
+        illness_customers,
+        recovery_customers,
+        infected_by_self_cashier,
+    )
 
 
 @njit(cache=True)
@@ -286,6 +298,7 @@ def make_extra_shopping_core(total_households,
                              C_go_incubation_because_shopping,
                              neigh_id_of_extra_shopping_by_week_and_house_id,
                              day):
+    # sourcery no-metrics
     extra_customers = 0
     extra_recovery_customers = 0
     extra_susceptible_customers = 0
@@ -293,7 +306,7 @@ def make_extra_shopping_core(total_households,
     extra_prodromal_customers = 0
     extra_illness_customers = 0
     infected_by_extra_cashier = 0
-    
+
     for house_id in range(total_households):
         for h_member in range(num_of_customers_in_household):
             if A_on_extra_shopping_by_house_id[house_id][h_member]:
@@ -301,33 +314,39 @@ def make_extra_shopping_core(total_households,
                 if A_state_by_house_id[house_id][h_member] == -1:
                     extra_recovery_customers += 1
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 0:
                     extra_susceptible_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 2:
-                        if np.random.rand() <= beta:
-                            A_go_incubation_because_shopping[house_id][h_member] = True
-                            infected_by_extra_cashier += 1
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 2
+                        and np.random.rand() <= beta
+                    ):
+                        A_go_incubation_because_shopping[house_id][h_member] = True
+                        infected_by_extra_cashier += 1
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 1:
                     extra_incubation_customers += 1
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
-                
+
                 elif A_state_by_house_id[house_id][h_member] == 2:
                     extra_prodromal_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
-                        if np.random.rand() <= beta:
-                            C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
-                            C_go_incubation_because_shopping[C_neigh_id] = True
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0
+                        and np.random.rand() <= beta
+                    ):
+                        C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
+                        C_go_incubation_because_shopping[C_neigh_id] = True
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
-                    
+
                 elif A_state_by_house_id[house_id][h_member] == 3:
                     extra_illness_customers += 1
-                    if C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0:
-                        if np.random.rand() <= beta:
-                            C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
-                            C_go_incubation_because_shopping[C_neigh_id] = True
+                    if (
+                        C_state_by_neigh_id[neigh_id_by_house_id[house_id]] == 0
+                        and np.random.rand() <= beta
+                    ):
+                        C_neigh_id = neigh_id_of_extra_shopping_by_week_and_house_id[day // 7][house_id]
+                        C_go_incubation_because_shopping[C_neigh_id] = True
                     A_on_extra_shopping_by_house_id[house_id][h_member] = False
 
     return extra_customers, extra_susceptible_customers, extra_incubation_customers, extra_prodromal_customers, \
@@ -375,10 +394,11 @@ def update_A_states_core(total_households,
                          illness_period_bins,
                          S_illness,
                          exponents_illness):
-    
+    # sourcery no-metrics
+
     # prob that illness agent will survive one day
     prob_of_survive_one_day = (1 - mortality) ** (1 / avg_illness_period)
-    
+
     # for each client ...
     for house_id in range(total_households):
         for house_member in range(num_of_customers_in_household):
@@ -387,16 +407,14 @@ def update_A_states_core(total_households,
             if A_state_by_house_id[house_id][house_member] == 0:
                 if (A_go_incubation_because_shopping[house_id][house_member]
                         or A_go_incubation_because_housemate[house_id][house_member]):
-                    
+
                     A_state_by_house_id[house_id][house_member] = 1
                     A_incubation_duration_by_house_id[house_id][house_member] =\
                         get_incubation_period(avg_incubation_period=avg_incubation_period,
                                               incubation_period_bins=incubation_period_bins,
                                               S_incubation=S_incubation,
                                               exponents_incubation=exponents_incubation)
-                    
-            # if had been incubated --> decrease incubation time by 1
-            #   and (make him prodromal if incubation time <= 0 and mark household as suspicious)
+
             elif A_state_by_house_id[house_id][house_member] == 1:
                 A_incubation_duration_by_house_id[house_id][house_member] -= 1
                 if A_incubation_duration_by_house_id[house_id][house_member] <= 0:
@@ -406,12 +424,10 @@ def update_A_states_core(total_households,
                                              prodromal_period_bins=prodromal_period_bins,
                                              S_prodromal=S_prodromal,
                                              exponents_prodromal=exponents_prodromal)
-                    
+
                     if num_of_customers_in_household > 1:
                         suspicious_households[house_id] = True
 
-            # if had been prodromal --> decrease prodromal time by 1
-            #   and make him ill if prodromal time <= 0
             elif A_state_by_house_id[house_id][house_member] == 2:
                 A_prodromal_duration_by_house_id[house_id][house_member] -= 1
                 if A_prodromal_duration_by_house_id[house_id][house_member] <= 0:
@@ -422,24 +438,22 @@ def update_A_states_core(total_households,
                                            S_illness=S_illness,
                                            exponents_illness=exponents_illness)
 
-            # if had been ill --> decrease illness time by 1
-            #   and make him dead; or recovered if prodromal time <= 0
+            # Is agent sick explicitly?
             elif A_state_by_house_id[house_id][house_member] == 3:
                 A_illness_duration_by_house_id[house_id][house_member] -= 1
+
+                # Try to kill agent with given prob.
+                if (
+                    not A_ignore_quarantine_by_house_id[house_id][house_member]     # if not immune
+                    and np.random.rand() > prob_of_survive_one_day                  # if has no luck
+                ):  # die today:
+                    A_state_by_house_id[house_id][house_member] = 4
+                    A_illness_duration_by_house_id[house_id][house_member] = 0
                 
-                # if agent is sick explicitly --> try to kill him with given prob
-                if not A_ignore_quarantine_by_house_id[house_id][house_member]:
-                    if np.random.rand() > prob_of_survive_one_day:  # if die today:
-                        A_illness_duration_by_house_id[house_id][house_member] = 0
-                        A_state_by_house_id[house_id][house_member] = 4
-                        
-                    elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                        A_state_by_house_id[house_id][house_member] = -1
-                # if agent is NOT sick explicitly
-                else:
-                    if A_illness_duration_by_house_id[house_id][house_member] <= 0:
-                        A_state_by_house_id[house_id][house_member] = -1
-                
+                # Try to recover agent.
+                elif A_illness_duration_by_house_id[house_id][house_member] <= 0:
+                    A_state_by_house_id[house_id][house_member] = -1
+                    
     A_go_incubation_because_shopping.fill(False)
     A_go_incubation_because_housemate.fill(False)
     

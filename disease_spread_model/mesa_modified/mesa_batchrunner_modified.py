@@ -510,10 +510,10 @@ class BatchRunnerMP(BatchRunner):
         Run the model at all parameter combinations and save results,
         overrides run_all from BatchRunner.
         """
-        from disease_spread_model.config import Config
+        from disease_spread_model.config import Directories
         from pathlib import Path
         
-        save_dir = Config.TMP_SAVE_DIR
+        save_dir = Directories.TMP_SAVE_DIR
         Path(save_dir).mkdir(parents=True, exist_ok=True)
 
         run_iter_args, total_iterations = self._make_model_args_mp()

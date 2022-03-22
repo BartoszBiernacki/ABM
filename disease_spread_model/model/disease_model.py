@@ -80,7 +80,7 @@ class DiseaseModel(Model):
                  extra_shopping_boolean,
                  housemate_infection_probability,
                  max_steps,
-                 ):
+                 ):  # sourcery no-metrics
         
         super().__init__()
         self.running = True  # required for BatchRunner

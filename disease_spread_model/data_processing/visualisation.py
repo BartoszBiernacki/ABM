@@ -1,7 +1,8 @@
 """Making all kind of plots to visualize real, simulated or both data."""
 import datetime
 
-from typing import Union
+from abc import ABC, abstractmethod
+from typing import Optional
 
 import matplotlib
 import matplotlib.lines as mlines
@@ -22,14 +23,334 @@ from scipy.signal import argrelmin
 from disease_spread_model.data_processing.text_processing import *
 from disease_spread_model.data_processing.avg_results import Results
 from disease_spread_model.data_processing.real_data import RealData
-from disease_spread_model.model.model_adjustment import TuningModelParams
+# from disease_spread_model.model.model_adjustment import TuningModelParams
 
-from disease_spread_model.config import Config
-from disease_spread_model.dirs_to_plot import FolderParams
 from disease_spread_model.model.my_math_utils import *
+from disease_spread_model.config import Directories
 
 
-class RealVisualisation(object):
+# from disease_spread_model.dirs_to_plot import FolderParams
+
+class Visualisation(ABC):
+    BASE_SAVE_DIR = f'{Directories.ABM_DIR}/RESULTS/plots/'
+    
+    def __init__(self,
+                 show: Optional[bool] = True,
+                 save: Optional[bool] = True,
+                 ):
+        self.fig = plt.figure(figsize=(12, 8))
+        self.ax = self.fig.add_subplot(111)
+        sns.despine(fig=self.fig, ax=self.ax)
+        
+        self.show = show
+        self.save = save
+        
+        self.save_folder_name = self._set_plot_folder_name()
+        self.fname = None
+        self.fig_title = None
+        self.fig_activated = True
+    
+    def _name_of_file_plot_from_title(self) -> str:
+        """Creates plot filename from its title."""
+        
+        plot_name = self.fig_title.replace('\n', ' ')
+        plot_name = plot_name.replace('    ', ' ')
+        if plot_name[-1:] == ' ':
+            plot_name = plot_name[:-1]
+        
+        return plot_name
+    
+    def _activate_fig(self):
+        if not self.fig_activated:
+            self.fig = plt.figure(figsize=(12, 8))
+            self.ax = self.fig.add_subplot(111)
+    
+    def _show_fig(self) -> None:
+        if self.show:
+            plt.figure(self.fig)
+            plt.show()
+    
+    def _save_fig(self, file_extension: Optional[str] = 'pdf') -> None:
+        """Save plot."""
+        if self.save:
+            self._set_plot_folder_name()
+            self._set_fname()
+            
+            plt.figure(self.fig)
+            
+            save_dir = self.BASE_SAVE_DIR + self.save_folder_name + '/'
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_dir + self.fname + '.' + file_extension.lower())
+    
+    @abstractmethod
+    def _label_plot_components(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _set_plot_folder_name(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _make_basic_plot(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _make_plot_nice_looking(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _make_annotations(self) -> None:
+        pass
+    
+    @abstractmethod
+    def _set_fname(self) -> None:
+        pass
+    
+    def plot(self) -> None:
+        self._make_basic_plot()
+        self._make_plot_nice_looking()
+        self._make_annotations()
+        
+        self._show_fig()
+        self._save_fig()
+
+
+class VisRealDT(Visualisation):
+    def __init__(
+            self,
+            show: Optional[bool] = True,
+            save: Optional[bool] = True,
+            
+            last_day_to_plot: Optional[int] = None,
+            normalized: Optional[bool] = False,
+            voivodeships: Optional[tuple[str]] = ('all',),
+    ):
+        super().__init__(show, save)
+        self.last_day_to_plot = self._get_last_day_to_plot_proper_value(last_day_to_plot)
+        self.normalized = normalized
+        self.voivodeships = voivodeships
+    
+    @staticmethod
+    def _get_last_day_to_plot_proper_value(last_day_to_plot: Optional[int]) -> int:
+        if last_day_to_plot:
+            return min(last_day_to_plot, len(RealData.get_real_death_toll().columns))
+        else:
+            return len(RealData.get_real_death_toll().columns)
+    
+    def _update_axis_limits(self) -> None:
+        """Set nice looking axis limits."""
+        
+        if self.normalized:
+            self.ax.set_xlim(0, self.last_day_to_plot + 5)
+            self.ax.set_ylim(0, 1.1)
+    
+    def _get_num_of_voivodeships(self) -> int:
+        if 'all' in self.voivodeships:
+            return len(RealData.get_voivodeships())
+        else:
+            return len(self.voivodeships)
+    
+    def _get_colors(self) -> list:
+        cmap = plt.get_cmap('rainbow_r')
+        num_of_voivodeships = self._get_num_of_voivodeships()
+        
+        return [cmap(i) for i in np.linspace(0, 1, num_of_voivodeships)]
+    
+    def _set_plot_folder_name(self) -> None:
+        self.save_folder_name = 'Death toll dynamic real'
+    
+    def _set_fname(self) -> None:
+        self.fname = (f'Real DT{" (normalized)" if self.normalized else ""} '
+                      f'{self.last_day_to_plot} days')
+    
+    def _label_plot_components(self) -> None:
+        self.fig.suptitle(self.fig_title)
+        self.ax.legend()
+        
+        self.ax.set_title(f"Suma zgonów{' (znormalizowana)' if self.normalized else ''} "
+                          f"od pierwszego przypadku tj. od 04-03-2020.\n"
+                          f"Kolory linii oddają wsp. urbanizacji (czerwony - najniższa wartość).")
+        
+        if self.normalized:
+            self.ax.set_ylabel("Suma zgonów / max(Suma zgonów)")
+        else:
+            self.ax.set_ylabel("Suma zgonów")
+        
+        self.ax.set_xlabel("t, dni od pierwszego śmiertelnego przypadku.")
+    
+    def _make_plot_nice_looking(self) -> None:
+        self._label_plot_components()
+        self._update_axis_limits()
+        plt.tight_layout()
+    
+    def _make_annotations(self) -> None:
+        
+        # annotate day 0 as 2020-03-04
+        self.ax.set_xticks(self.ax.get_xticks().tolist()[1:-1])
+        self.ax.set_xticklabels([f'{x:.0f}' if x != 0 else '2020-03-04' for x in self.ax.get_xticks().tolist()])
+    
+    def _make_basic_plot(self) -> None:
+        
+        # get sorted urbanization, it will be criteria by which line colors are matched
+        urbanization = RealData.get_real_general_data()['urbanization']
+        urbanization = urbanization.sort_values()
+        
+        real_death_toll = RealData.get_real_death_toll()
+        
+        for voivodeship, color in zip(urbanization.keys(), self._get_colors()):
+            # x, y data to plot
+            x = list(range(self.last_day_to_plot))
+            y = real_death_toll.loc[voivodeship].iloc[:self.last_day_to_plot]
+            
+            # normalize y data if possible and needed
+            if self.normalized and np.max(y[:self.last_day_to_plot]) > 0:
+                y /= np.max(y[: self.last_day_to_plot])
+            
+            # if current voivodeship was passed as arg to function then plot data for it
+            if 'all' in self.voivodeships or voivodeship in self.voivodeships:
+                self.ax.plot(x[: self.last_day_to_plot], y[: self.last_day_to_plot],
+                             label=voivodeship, color=color)
+
+
+class VisRealDTShiftedByHand(Visualisation):
+    
+    def __init__(self,
+                 starting_day: Optional[int] = 10,
+                 num_of_days_to_plot: Optional[int] = 100,
+                 directory_to_data: Optional[str] = None,
+                 ):
+        super().__init__()
+        self.starting_day = starting_day
+        self.num_of_days_to_plot = num_of_days_to_plot
+        self.directory_to_data = directory_to_data
+    
+    def _set_plot_folder_name(self) -> None:
+        self.save_folder_name = 'Death toll dynamic shifted real'
+    
+    def _set_fname(self) -> None:
+        self.fname = "Real shifted DT"
+    
+    # TODO liczba zgonów w tytule
+    def _label_plot_components(self) -> None:
+        self.fig.suptitle(self.fig_title)
+        
+        self.ax.set_title(f"Suma zgonów w województwach, w których przebieg pandemii, "
+                          f"od {999} przypadków był podobny.\n")
+
+        self.ax.set_xlabel(f"t, nr. dnia począwszy od dnia w którym zmarło {999} osób w danym województwie")
+        self.ax.set_ylabel("Suma zgonów")
+    
+    def _make_plot_nice_looking(self) -> None:
+        self._label_plot_components()
+        plt.tight_layout()
+    
+    def _make_annotations(self) -> None:
+        pass
+        
+    def _make_basic_plot(self) -> None:
+        """
+       Makes many death toll plots. On each plot there is death toll for group of similar
+       voivodeships. Plots are shifted along X axis in such a way, that pandemic begins
+       in starting_day.
+
+       Similarity was defined by hand, by looking at death tolls of all voivodeships
+       shifted such plots started with chosen value of death toll and looking for what
+       initial value of death toll plot smoothly increases.
+
+       If directory_to_data is given than shifted simulated data are also plotted.
+       """
+
+        # dict[starting_deaths] = list(voivodeship1, voivodeship2, ...)
+        death_shifts = self._get_dict_shift_to_voivodeships()
+        last_day = 100  # TODO replace it by dynamic value
+
+        for init_deaths, voivodeships in death_shifts.items():
+            death_toll_shifted_df = \
+                RealData.get_shifted_real_death_toll_to_common_start_by_num_of_deaths(
+                    starting_day=self.starting_day,
+                    minimum_deaths=init_deaths)
+            
+            self._make_inner_plot(voivodeships, death_toll_shifted_df, last_day)
+
+            if self.directory_to_data:
+                fnames = all_fnames_from_dir(directory=self.directory_to_data)
+
+                num_of_lines = len(fnames)
+                cmap = plt.get_cmap('viridis')
+                colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
+
+                for i, fname in enumerate(fnames):
+                    beta = float(variable_params_from_fname(fname=fname)['beta'])
+                    mortality = float(variable_params_from_fname(fname=fname)['mortality'])
+                    visibility = float(variable_params_from_fname(fname=fname)['visibility'])
+
+                    df = pd.read_csv(fname)
+
+                    y = np.array(df['Dead people'])
+                    try:
+                        common_day = np.where(y >= init_deaths)[0][0]
+                    except IndexError:
+                        common_day = 0
+                    y = y[common_day - self.starting_day:]
+                    x = list(range(len(y)))
+
+                    beta_info = r'$\beta$=' + f'{beta}'
+                    mortality_info = f'mortality={mortality * 100:.1f}%'
+                    visibility_info = f'visibility={visibility * 100:.0f}%'
+                    day_info = f"day {self.starting_day}=0"
+
+                    label = '{:<10} {:>15} {:>15} {:>10}'.format(beta_info,
+                                                                 mortality_info,
+                                                                 visibility_info,
+                                                                 day_info)
+
+                    self.ax.plot(x[:last_day], y[:last_day], label=label, color=colors[i],
+                            linewidth=1, linestyle='dashed')
+
+            self.ax.legend(prop={'family': 'monospace'}, loc='upper left')
+            
+            self._show_fig()
+            self.fig_activated = False
+            
+    def _make_inner_plot(self,
+                         voivodeships: list[str],
+                         death_toll_shifted_df: pd.DataFrame,
+                         last_day: int,
+                         ) -> None:
+        
+        self._activate_fig()
+        
+        for voivodeship, color in zip(voivodeships, self._get_colors(voivodeships)):
+            x = death_toll_shifted_df.columns  # x = days of pandemic = [0, 1, ...]
+            y = death_toll_shifted_df.loc[voivodeship]
+        
+            self.ax.plot(x[:last_day], y[:last_day], c=color, lw=3, label=voivodeship)
+    
+    @staticmethod
+    def _get_dict_shift_to_voivodeships() -> dict[int: list[str]]:
+        """Return dict[starting_deaths_num] = list(voivodeship1, voivodeship2, ...)."""
+        
+        voivodeship_starting_deaths_dict = RealData.get_starting_deaths_by_hand()
+        unique_death_shifts = sorted(list(set(voivodeship_starting_deaths_dict.values())))
+        
+        return {
+            unique_death_shift:
+                [v for v, shift in voivodeship_starting_deaths_dict.items()
+                 if shift == unique_death_shift]
+            for unique_death_shift in unique_death_shifts
+        }
+
+    @staticmethod
+    def _get_colors(voivodeships: list) -> list:
+        num_of_lines = len(voivodeships)
+        cmap = plt.get_cmap('rainbow_r')
+        return [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
+    
+    def plot(self) -> None:
+        self._make_basic_plot()
+
+
+class RealVisualisation:
     """
     Class responsible for making visualisation of real data only.
 
@@ -68,9 +389,6 @@ class RealVisualisation(object):
 
     """
     
-    def __init__(self):
-        pass
-    
     @classmethod
     def __show_and_save(cls, fig, plot_type, plot_name, save, show, file_format='pdf'):
         """Function that shows and saves figures
@@ -90,7 +408,7 @@ class RealVisualisation(object):
         # set fig as current figure
         plt.figure(fig)
         if save:
-            save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
+            save_dir = f'{Directories.ABM_DIR}/RESULTS/plots/{plot_type}/'
             Path(save_dir).mkdir(parents=True, exist_ok=True)
             plt.savefig(save_dir + plot_name + '.' + file_format.lower())
         
@@ -151,18 +469,14 @@ class RealVisualisation(object):
         else:
             last_day = len(RealData.get_real_death_toll().columns)
         
-        # set title and axis labels
-        norm_info = ''
-        if normalized:
-            norm_info = ' (normalized)'
-        
+        norm_info = ' (normalized)' if normalized else ''
         ax.set_title(f"Death toll{norm_info}. Data for {last_day} days since first case i.e. 04-03-2020.\n"
                      f"The colors of the lines are matched with regard to the urbanization factor "
                      f"(red for the biggest value).")
         if normalized:
             ax.set_ylabel(f"Death toll / Day toll(day={last_day})")
         else:
-            ax.set_ylabel(f"Death toll")
+            ax.set_ylabel("Death toll")
         ax.set_xlabel("t, day since first day of collecting data i.e. 04-03-2020")
         
         # set colormap
@@ -170,11 +484,9 @@ class RealVisualisation(object):
         # set proper number of colors equal to number of lines
         if 'all' in voivodeships:
             num_of_lines = len(RealData.get_voivodeships())
-            colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
         else:
             num_of_lines = len(voivodeships)
-            colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
-        
+        colors = [cmap(i) for i in np.linspace(0, 1, num_of_lines)]
         # get sorted urbanization, it will be criteria by which line colors are matched
         urbanization = RealData.get_real_general_data()['urbanization']
         urbanization = urbanization.sort_values()
@@ -188,9 +500,8 @@ class RealVisualisation(object):
             y = real_death_toll.loc[voivodeship].iloc[:last_day]
             
             # normalize y data if possible
-            if normalized:
-                if np.max(y[: last_day]) > 0:
-                    y /= np.max(y[: last_day])
+            if normalized and np.max(y[:last_day]) > 0:
+                y /= np.max(y[: last_day])
             
             # if current voivodeship was passed as arg to function then plot data for it
             if 'all' in voivodeships or voivodeship in voivodeships:
@@ -206,11 +517,13 @@ class RealVisualisation(object):
         ax.legend()
         plt.tight_layout()
         
-        cls.__show_and_save(fig=fig,
-                            plot_type=f'Real death toll, since 04-03-2020',
-                            plot_name=cls._get_plot_name_from_title(ax.get_title()),
-                            save=save,
-                            show=show)
+        cls.__show_and_save(
+            fig=fig,
+            plot_type='Real death toll, since 04-03-2020',
+            plot_name=cls._get_plot_name_from_title(ax.get_title()),
+            save=save,
+            show=show,
+        )
     
     @classmethod
     def show_real_death_toll_shifted_by_hand(cls,
@@ -220,7 +533,7 @@ class RealVisualisation(object):
                                              directory_to_data=None,
                                              shift_simulated=False,
                                              save=False,
-                                             show=True):
+                                             show=True):  # sourcery no-metrics
         """
         Makes many death toll plots. On each plot there is death toll for group of similar
         voivodeships. Plots are shifted along X axis in such a way, that pandemic begins
@@ -366,13 +679,13 @@ class RealVisualisation(object):
         
         # PLot first (main) plot on main ax (starting day) **********************************************************
         # make title and labels
-        main_info = (f"Day that is consider as starting day of pandemic "
-                     f"for given voivodeship and death toll in that day.\n"
-                     f" Day 0 is 04-03-2020.")
+        main_info = ("Day that is consider as starting day of pandemic "
+                     "for given voivodeship and death toll in that day.\n"
+                     " Day 0 is 04-03-2020.")
         
         ax.set_title(main_info)
-        ax.set_xlabel(f'Voivodeship')
-        ax.set_ylabel(f'Day number since 04-03-2020 which is considered to be the beginning of a pandemic')
+        ax.set_xlabel('Voivodeship')
+        ax.set_ylabel('Day number since 04-03-2020 which is considered to be the beginning of a pandemic')
         
         # get starting day of pandemic by percent of touched counties
         starting_days_deaths = RealData.starting_days(
@@ -496,7 +809,7 @@ class RealVisualisation(object):
                                       plot_redundant=False,
                                       show=True,
                                       save=False,
-                                      ):
+                                      ):  # sourcery no-metrics
         """
         Plots crucial steps in finding last day of pandemic in voivodeships.
 
@@ -705,8 +1018,8 @@ class RealVisualisation(object):
                      f" Day 0 is 04-03-2020.")
         
         ax.set_title(main_info)
-        ax.set_xlabel(f'Voivodeship')
-        ax.set_ylabel(f'Days of first phase of pandemic')
+        ax.set_xlabel('Voivodeship')
+        ax.set_ylabel('Days of first phase of pandemic')
         
         # get start days dict
         starting_days = RealData.starting_days(
@@ -715,7 +1028,7 @@ class RealVisualisation(object):
             ignore_healthy_counties=False)
         
         ending_days = RealData.ending_days_by_death_toll_slope(
-            starting_days=start_days_by,
+            starting_days_by=ST,
             percent_of_touched_counties=percent_of_touched_counties,
             last_date=last_date,
             death_toll_smooth_out_win_size=death_toll_smooth_out_win_size,
@@ -723,9 +1036,10 @@ class RealVisualisation(object):
         )
         
         # Get dict {voivodeship: pandemic_duration_in_days}
-        pandemic_duration = {}
-        for voivodeship in starting_days.keys():
-            pandemic_duration[voivodeship] = ending_days[voivodeship] - starting_days[voivodeship]
+        pandemic_duration = {
+            voivodeship: ending_days[voivodeship] - starting_days[voivodeship]
+            for voivodeship in starting_days.keys()
+        }
         
         # Sort dict by values
         pandemic_duration = sort_dict_by_values(pandemic_duration)
@@ -1002,7 +1316,7 @@ class SimulatedVisualisation(object):
                 plt.savefig(save_dir + plot_name + '.pdf')
             
             if save_in_general:
-                save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
+                save_dir = Directories.ABM_DIR + '/RESULTS/plots/' + plot_type + '/'
                 Path(save_dir).mkdir(parents=True, exist_ok=True)
                 plt.savefig(save_dir + plot_name + '.pdf')
         
@@ -1014,7 +1328,7 @@ class SimulatedVisualisation(object):
     @classmethod
     def _date_from_day_number(cls, day_number: int) -> str:
         date0 = datetime.datetime(2020, 3, 4)
-        date0 += datetime.timedelta(days=int(day_number))
+        date0 += datetime.timedelta(days=day_number)
         return date0.strftime('%Y-%m-%d')
     
     @classmethod
@@ -1305,7 +1619,7 @@ class SimulatedVisualisation(object):
         :param save: save plot?
         :type save: bool
         """
-
+        
         # Convert param names to current naming convention
         param1, param2, param3 = TRANSLATE.to_short([param1, param2, param3])
         
@@ -1701,7 +2015,7 @@ class SimulatedVisualisation(object):
             
             # save in general plots folder
             if save:
-                save_dir = Config.ABM_dir + '/RESULTS/plots/' + plot_type + '/'
+                save_dir = Directories.ABM_DIR + '/RESULTS/plots/' + plot_type + '/'
                 Path(save_dir).mkdir(parents=True, exist_ok=True)
                 plt.savefig(save_dir + plot_name + '.png')
             
@@ -1809,7 +2123,7 @@ class SimulatedVisualisation(object):
             dir_to_data=None,
             save_in_general=True,
         )
-        
+    
     @classmethod
     def all_death_toll_from_dir_by_fixed_params(cls, fixed_params: dict, c_norm_type='log'):
         """Plot simple death toll dynamic to ensure that params in model works fine.
@@ -1820,57 +2134,57 @@ class SimulatedVisualisation(object):
             beta, mortality, visibility. Example fname:
             'Id=0001__p_inf_cust=2.34__b=0.025__m=0.02__v=0.65.csv'
         """
-    
+        
         def get_param_name_from_fname(fname):
             """Returns first param name found in fname except from: 'beta', 'mortality', 'visibility'."""
-        
+            
             fname = os.path.split(fname)[1]  # get fname without prev dirs
             fname_splitted = fname_to_list(fname)  # convert fname to list like ['Beta=0.036', ...]
-        
+            
             for param in fname_splitted:
                 if not ('beta' in param.lower()
                         or 'mortality' in param.lower()
                         or 'visibility' in param.lower()):
                     return param.split('=')[0].lower()
-    
+        
         def sort_helper(fname, parameter_name):
             fname = os.path.split(fname)[1]  # get fname without prev dirs
             fname_splitted = fname_to_list(fname)  # convert fname to list like ['Beta=0.036', ...]
-        
+            
             # make dict {'beta': 0.036, ...}
             fname_dict = {item.split('=')[0].lower(): float(item.split('=')[1]) for item in fname_splitted}
             return fname_dict[parameter_name.lower()]
-    
+        
         # Get folder name (which contains csv files)
         folder = find_folder_by_fixed_params(
-            directory=Config.AVG_SAVE_DIR,
+            directory=Directories.AVG_SAVE_DIR,
             params=fixed_params)
         folder += 'raw data/'
-    
+        
         # Get fnames and sort them by param values
         fnames = all_fnames_from_dir(directory=folder)
         param_name = get_param_name_from_fname(fnames[0])
         fnames = sorted(fnames, key=lambda fname: sort_helper(fname, param_name))
         param_name = TRANSLATE.to_short(param_name)
-    
+        
         # Get variable params from fnames and dfs from its csv files
         variable_params = [TRANSLATE.to_short(variable_params_from_fname(fname)) for fname in fnames]
         dfs = [pd.read_csv(fname) for fname in fnames]
-    
+        
         # Prepare  fig and ax
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
         sns.despine(fig=fig, ax=ax)
-    
+        
         fig.suptitle("Suma zgonów")
         ax.set_title(f"Różne wartości '{param_name.replace('_', ' ')}'")
-    
+        
         # Create rainbow colormap and colors; based on param values
         # get min and max param values
         param_values = np.array([float(params[param_name]) for params in variable_params])
         min_param = np.min(param_values[np.nonzero(param_values)])
         max_param = np.max(param_values[np.nonzero(param_values)])
-    
+        
         cmap = matplotlib.cm.get_cmap('rainbow')
         # set linear or logarithm colormap
         if c_norm_type == 'log':
@@ -1884,22 +2198,22 @@ class SimulatedVisualisation(object):
         else:
             lin_norm = mColors.Normalize(vmin=min_param, vmax=max_param)
             colors = cmap(lin_norm(param_values))
-    
+        
         # PLot data
         for params, df, color in zip(variable_params, dfs, colors):
             ax.plot(df['Day'], df['Dead people'],
                     label=params[param_name], c=color)
-    
+        
         # label lines by putting text on top of them
         labelLines(ax.get_lines(), zorder=2)
         plt.show()
 
 
-if __name__ == '__main__':
-    pass
+def main():
+    # VisRealDT(last_day_to_plot=200).plot()
+    
+    VisRealDTShiftedByHand().plot()
 
-    SimulatedVisualisation.death_toll_for_best_tuned_params(
-        last_date='2020-07-01',
-        show=True,
-        save=False
-    )
+
+if __name__ == '__main__':
+    main()

@@ -1,5 +1,5 @@
 from disease_spread_model.data_processing.visualisation import *
-from disease_spread_model.config import Config
+from disease_spread_model.config import RealDataOptions
 
 # [1]  ******************************************************
 RealVisualisation.show_real_death_toll(voivodeships=['all'],
@@ -130,26 +130,13 @@ first_days = RealData.starting_days(
     percent_of_touched_counties=Config.percent_of_infected_counties)
 
 last_days = RealData.ending_days_by_death_toll_slope(
-            starting_days='infections',
-            percent_of_touched_counties=80,
-            last_date='2020-07-01',
-            death_toll_smooth_out_win_size=21,
-            death_toll_smooth_out_polyorder=3,
-        )
+        starting_days=RealDataOptions.STARTING_DAYS_BY,
+        percent_of_touched_counties=RealDataOptions.PERCENT_OF_INFECTED_COUNTIES,
+        last_date=RealDataOptions.LAST_DATE,
+        death_toll_smooth_out_win_size=RealDataOptions.DEATH_TOLL_DERIVATIVE_SMOOTH_OUT_WIN_SIZE,
+        death_toll_smooth_out_polyorder=RealDataOptions.DEATH_TOLL_DERIVATIVE_SMOOTH_OUT_SAVGOL_POLYORDER,
+    )
 
-TuningModelParams.find_beta_for_voivodeships(
-    voivodeships=['łódzkie'],
-    starting_days=first_days,
-    ending_days=last_days,
-    mortality=2,
-    visibility=0.65)
-
-TuningModelParams.find_mortality_for_voivodeships(
-    voivodeships=['łódzkie'],
-    starting_days=first_days,
-    ending_days=last_days,
-    beta=0.025,
-    visibility=0.65)
 
 TuningModelParams.optimize_beta_and_mortality(
     voivodeships=['all'],

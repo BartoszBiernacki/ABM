@@ -1,5 +1,3 @@
-
-
 class FolderParams(object):
     PERCENT_OF_INFECTED_CUSTOMERS_AT_START = {
         'Runs': 48,

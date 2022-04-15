@@ -137,7 +137,7 @@ def voivodeship_from_fname(fname):
         folder_name = fname[: fname.find('/')]
         fname = fname[fname.find('/') + 1:]
         
-        if folder_name.lower() in RealData.get_voivodeships():
+        if folder_name.lower() in RealData.voivodeships():
             return folder_name.lower()
         
         if '/' not in fname:
@@ -147,9 +147,12 @@ def voivodeship_from_fname(fname):
             raise IndexError('voivodeship_from_fname stuck in infinity loop!')
 
 
-def all_fnames_from_dir(directory):
+def all_fnames_from_dir(directory: str) -> list[str]:
     if not Path(directory).exists():
         raise FileNotFoundError(directory)
+
+    if directory[-1] != '/':
+        directory += '/'
     
     cwd = os.getcwd()
     os.chdir(directory)
@@ -157,8 +160,13 @@ def all_fnames_from_dir(directory):
     os.chdir(cwd)
     
     fnames.sort()
-    
+
     return fnames
+
+
+def latest_file_in_dir(directory: str) -> str:
+    fnames = all_fnames_from_dir(directory=directory)
+    return max(fnames, key=os.path.getctime)
 
 
 def get_ax_title_from_fixed_params(fixed_params):
@@ -207,13 +215,13 @@ def group_fnames_by_pair_param2_param3_and_param1(directory: str,
                                                   param3: str):
     """
 
-    :param directory: directory do folder which contains avg resulting files
+    :param directory: directory do folder, which contains avg resulting files
     :type directory: str
     :param param1: name of model parameter, available ['beta', 'mortality', 'visibility']
     :type param1: str
-    :param param2: like param1, but different than param1
+    :param param2: like param1, but different from param1
     :type param2: str
-    :param param3: like param1, but different than param1 and param2
+    :param param3: like param1, but different from param1 and param2
     :type param3: str
     :return: 2D list of fnames where:
         result[i][j] --> fname( param1_i, (param2, param3)_j )

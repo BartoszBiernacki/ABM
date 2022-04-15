@@ -2,6 +2,11 @@ import os
 from enum import Enum, auto
 
 
+class HInfProb(Enum):
+    DEFAULT = auto()
+    BY_BETA = auto()
+
+
 class StartingDayBy(Enum):
     INFECTIONS = auto()
     DEATHS = auto()
@@ -10,8 +15,8 @@ class StartingDayBy(Enum):
 class ModelOptions:
     """Holds 'DiseaseModel' default parameters."""
     
-    GRID_SIZE = (20, 20)
-    N = 700
+    GRID_SIZE = (30, 30)
+    N = 800
     CUSTOMERS_IN_HOUSEHOLD = 3
     BETA = 2.5/100
     MORTALITY = 2.0/100
@@ -22,9 +27,8 @@ class ModelOptions:
     AVG_ILLNESS_PERIOD, ILLNESS_PERIOD_BINS = 15, 1
 
     INFECTED_CASHIERS_AT_START = 20
-    # PERCENT_OF_INFECTED_CUSTOMERS_AT_START = 2
     PERCENT_OF_INFECTED_CUSTOMERS_AT_START = 0
-    HOUSEMATE_INFECTION_PROBABILITY = 0.53
+    HOUSEMATE_INFECTION_PROBABILITY = HInfProb.BY_BETA
     EXTRA_SHOPPING_BOOLEAN = True
     MAX_STEPS = 200
 
@@ -68,6 +72,14 @@ class Directories:
         f"processed/"
         f"model_params_tuning/"
         f"model_params_tuning_attempts.csv")
+
+    LOGGING_MODEL_RUNS_FNAME = (
+        f"{ABM_DIR}/"
+        f"disease_spread_model/"
+        f"data/"
+        f"processed/"
+        f"model_runs/"
+        f"model_custom_runs.csv")
     
     TEST_PLOT_DIR = f"{ABM_DIR}/RESULTS/TESTS/plots/"
 

@@ -10,6 +10,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\disease_spread_model\data\processed\model_runs\model_custom_runs.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
       </map>
     </option>
   </component>

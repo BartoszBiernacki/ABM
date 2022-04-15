@@ -522,7 +522,6 @@ class BatchRunnerMP(BatchRunner):
         if self.processes > 1:
             with tqdm(total_iterations, disable=not self.display_progress) as pbar:
                 for params, model in self.pool.imap_unordered(self._run_wrappermp, run_iter_args):
-                    
                     fname = save_dir + str(params) + '.pkl'
                     df = model.datacollector.get_model_vars_dataframe()
                     df.to_pickle(fname)

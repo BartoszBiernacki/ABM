@@ -42,10 +42,11 @@ class Results(object):
         They are named in specific way: the name is a tuple that stores
         all the information about model parameters and last elem of tuple is a
         number of the simulation performed. Thanks to that simulations can be
-        grouped so in one group there are simulations that had the same model parameters.
+        grouped so in one group there are simulations that had the same
+        initial model parameters.
         Then groups of simulations are being averaged and returned.
         
-        Function allows to ignore expired pandemics when calculating average.
+        Function allows ignoring expired pandemics when calculating average.
         Pandemic is considered as expired when in the last day of simulation
         there are not any infected or prodromal cashiers and clients.
         """

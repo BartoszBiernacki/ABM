@@ -83,6 +83,8 @@ class Directories:
     
     TEST_PLOT_DIR = f"{ABM_DIR}/RESULTS/TESTS/plots/"
 
+    LATEX_TABLE_DIR = f"{ABM_DIR}/RESULTS/Latex tables/"
+
 
 class RealDataOptions:
     """Holds some parameters used for finding last and first day of pandemic."""

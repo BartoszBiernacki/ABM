@@ -195,7 +195,6 @@ class Optimizer(ABC):
         geospatial_df = RealData.get_real_general_data()
         population = geospatial_df.loc[voivodeship]['population']
 
-        # return 0
         return (num_of_infected / population) * .25
 
     @abstractmethod
@@ -284,7 +283,8 @@ class Optimizer(ABC):
             index=[-1],
         )
 
-    def _find_shift_and_fit_error_per_day(self, voivodeship: str) -> (int, float, str):
+    def _find_shift_and_fit_error_per_day(
+            self, voivodeship: str) -> (int, float, str):
         """
         A general purpose method of this class.
         Runs simulation for given params and returns best
@@ -334,9 +334,10 @@ class Optimizer(ABC):
             remove_single_results=True
         )
 
-        # As it ran simulations for only one triplet of (visibility, beta, mortality)
-        # then result is the one file in avg_directory. To be specific it is
-        # the latest file in directory, so read from it.
+        # As it ran simulations for only one triplet of
+        # (visibility, beta, mortality) then result is the one file in
+        # avg_directory. To be specific it is the latest file in directory,
+        # so read from it.
 
         latest_file = latest_file_in_dir(directory)
         df = pd.read_csv(latest_file)
@@ -345,7 +346,8 @@ class Optimizer(ABC):
             y1_reference=df['Dead people'],
             y2=RealData.death_tolls().loc[voivodeship],
             y2_start_idx=self.starting_days[voivodeship],
-            y2_end_idx=self.ending_days[voivodeship])
+            y2_end_idx=self.ending_days[voivodeship]
+        )
 
         num_of_fitted_days = self.ending_days[voivodeship] - self.starting_days[voivodeship] + 1
         fit_error_per_day = error / num_of_fitted_days
@@ -554,7 +556,7 @@ class BetaMortalityOptimizer(Optimizer):
             num_of_shots=num_of_shots,
         )
 
-    def _func_to_optimize(self, vector: np.ndarray, extra_args: dict):
+    def _func_to_optimize(self, vector: np.ndarray, extra_args: dict) -> float:
         self.beta = vector[0]
         self.mortality = vector[1]
         voivodeship = extra_args['voivodeship']

@@ -276,14 +276,16 @@ def slope_from_linear_fit(data, half_win_size):
     slope = np.zeros_like(data)
 
     for i in range(len(data)):
+        # Avoid index error
         left = max(0, i - half_win_size)
         right = min(len(data) - 1, i + half_win_size)
-    
+
         y = np.array(data[left: right + 1]).astype(float)
         x = np.arange(len(y))
-    
+
         linefit = linregress(x, y)
         slope[i] = linefit.slope
+
     return slope
 
 

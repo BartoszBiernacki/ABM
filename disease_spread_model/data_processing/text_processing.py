@@ -1,6 +1,8 @@
 import itertools
 import glob
 import os
+import re
+import warnings
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -14,7 +16,10 @@ def get_list_of_tuples_from_dir(directory):
     for i, fname in enumerate(fnames):
         tup = eval(fname[len(directory): -4])
         fnames[i] = tup
-    
+        print(tup)
+
+    print()
+    print()
     return fnames
 
 
@@ -496,3 +501,80 @@ def find_folder_by_fixed_params(directory: str, params: dict):
         if is_dict1_in_dict2(d1=params, d2=folder_dict):
             return directory + folder + '/'
     raise FileNotFoundError
+
+
+def save_text(fdir: str, text: str) -> None:
+    directory = os.path.split(fdir)[0]
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    with open(fdir, 'w', encoding='utf-8') as f:
+        f.write(text)
+
+
+class DfToLatex:
+
+    @staticmethod
+    def _apply_linebreak_to_column_name(name: str, lbrk: str) -> str:
+        if lbrk not in name:
+            return name
+
+        start_str = r"\vtop{"
+        l_word_box = r"\hbox{\strut "
+        r_word_box = r"}"
+        end_str = r"}"
+
+        trans_name = start_str
+        for txt in name.split(lbrk):
+            trans_name += l_word_box + txt + r_word_box
+        trans_name += end_str
+
+        # Put `//` outside `vtop` to properly indicate new row
+        trans_name = trans_name.replace(r"\\}}", r"}}\\")
+
+        return trans_name
+
+    @staticmethod
+    def _add_vlines_between_latex_cols(latex_line: str) -> str:
+        cols = re.findall('{.*?}', latex_line)[1]
+        transformed_cols = ''
+
+        for i, char in enumerate(cols):
+            if char not in [r'{', r'}']:
+                transformed_cols += \
+                    r'|c|' if i == 1 else r'c|'
+            else:
+                transformed_cols += char
+
+        return latex_line.replace(cols, transformed_cols)
+
+    @staticmethod
+    def df_to_latex(df: pd.DataFrame, lbrk: str) -> str:
+        with warnings.catch_warnings():
+            warnings.simplefilter(action='ignore', category=FutureWarning)
+            df_table_str = df.to_latex()
+
+        lines = df_table_str.split('\n')
+        result = ''
+
+        for line in lines:
+            if r"\begin{tabular}" in line:  # add hline
+                trans_line = DfToLatex._add_vlines_between_latex_cols(line)
+                result += trans_line + '\n' + r"\hline"
+            elif r"\end{tabular}" in line:  # no add hline
+                result += line
+            elif r'&' not in line:  # trash like or treasure like `center`
+                if line in [r'\toprule', r'\midrule', r'\bottomrule']:
+                    continue
+                else:
+                    result += line
+            else:   # lines with data entries
+                words = line.split(r'&')
+                trans_words = [
+                    DfToLatex._apply_linebreak_to_column_name(word, lbrk)
+                    for word in words]
+                trans_line = r'&'.join(trans_words)
+
+                result += trans_line + '\n' + r"\hline"
+            result += '\n'
+
+        return result
+

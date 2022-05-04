@@ -315,5 +315,9 @@ class RunModel:
 if __name__ == '__main__':
     RunModel.run_simulation_to_test_sth(
         make_log=False,
-        sweep_params={'beta': [2/100]},
+        sweep_params={
+            'mortality': [1 / 100, 1.5 / 100],
+            'beta': [2 / 100, 3 / 100],
+                      },
+        iterations=3
     )
